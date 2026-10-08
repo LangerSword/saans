@@ -1,0 +1,42 @@
+# --- secrets / env ---
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials
+.aws/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- aws sam ---
+.aws-sam/
+samconfig.toml
+packaged.yaml
+
+# --- node ---
+node_modules/
+npm-debug.log*
+
+# --- editors / os ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# --- data / scratch (keep fixtures out of git) ---
+*.local.json
+/tmp/
