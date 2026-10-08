@@ -1,0 +1,21 @@
+{
+  "_README": "SNAPSHOT FALLBACK. This is a real captured response from the Open-Meteo CAMS air-quality feed for Central Delhi (28.6448, 77.2167), saved so the demo and tests run with no network. It is MODELED data (CAMS grid, ~11 km), NOT a station measurement, exactly like the live feed. Attribution: Open-Meteo.com from CAMS, CC-BY 4.0.",
+  "_captured_utc": "2026-10-09T00:00:00Z",
+  "_source": "open-meteo-cams",
+  "_modeled": true,
+  "_breakpoint_version": "cpcb-naqi-2014-pm-v1",
+  "_note_on_nulls": "Hours 03 and 04 have null pm2_5 on purpose: they exercise null handling. A null means 'no reading', never zero. The last two hours are all-null and are dropped entirely.",
+  "latitude": 28.6448,
+  "longitude": 77.2167,
+  "timezone": "Asia/Kolkata",
+  "hourly": {
+    "time": [
+      "2026-10-09T00:00", "2026-10-09T01:00", "2026-10-09T02:00",
+      "2026-10-09T03:00", "2026-10-09T04:00", "2026-10-09T05:00",
+      "2026-10-09T06:00", "2026-10-09T07:00",
+      "2026-10-09T22:00", "2026-10-09T23:00"
+    ],
+    "pm2_5": [79.4, 79.2, 79.4, null, null, 79.2, 80.8, 81.5, null, null],
+    "pm10": [123.9, 125.7, 125.7, 129.5, 131.3, 131.8, 131.8, 133.6, null, null]
+  }
+}

@@ -1,3 +1,10 @@
+# 38% -> 12% misclassification: the finding behind the CPCB conversion
+# measured 2026-10-09 IST against the live Open-Meteo CAMS feed (Central Delhi)
+# script: tools/scale_check.py  (run: python3 tools/scale_check.py)
+# claim: feeding Open-Meteo's us_aqi (US EPA) into our CPCB tier table misclassified
+#        38% of a live Delhi day; computing CPCB AQI from pm2_5/pm10 drops it to 12%,
+#        the remainder being a genuine US/CPCB scale difference, not a bug.
+
 time                pm2_5   pm10  us_aqi   CPCB  tier(US)  tier(CPCB)  verdict
 ----------------------------------------------------------------------------------------
 2026-10-09T00:00     79.4  123.9   171.0  162.4  moderate    moderate  

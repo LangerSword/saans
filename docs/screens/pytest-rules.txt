@@ -9,3 +9,10 @@
 # (from scratch_scale_check.py, see docs/screens/scale-check.txt)
 ----------------------------------------------------------------------------------------
 24 hours, 3 would be misclassified by us_aqi (12%)
+
+# Task 3 acceptance — ingest + advisory (.venv/bin/pytest -q)
+# date: 2026-10-08 22:28 UTC
+
+........................................................................ [ 75%]
+.......................                                                  [100%]
+95 passed in 0.06s

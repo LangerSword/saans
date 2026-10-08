@@ -88,6 +88,12 @@ CPCB_BREAKPOINTS = {
 # dominates the index, but it is still an approximation.
 PM_ONLY_POLLUTANTS = ("pm2_5", "pm10")
 
+# Staleness: a reading older than this (hours) must NOT be used to DOWNGRADE a
+# tier. A school-safety tool fails toward caution — if we cannot confirm the air
+# improved, we hold the current (higher) tier rather than relax it on old data.
+# Defined here and re-exported so ingest and rules share one threshold.
+STALE_AFTER_HOURS = 3
+
 # CPCB AQI band edges. Tiers 0..4. (max_aqi_exclusive, band_name)
 BANDS = [
     (101, "good"),          # 0-100
@@ -165,6 +171,36 @@ ACTIONS = {
     "severe": "Recommend closure or online classes. Escalate to authorities.",
 }
 
+# ESTIMATE DISCLAIMER — appended to EVERY advisory. The data is a CAMS grid
+# model at ~11 km, not a station monitor, and the index is PM-only. The advisory
+# must say this is an estimate and that the principal should use their own
+# judgment alongside any local reading. This is not a footnote; it is in the text.
+ESTIMATE_DISCLAIMER = (
+    "This is an estimate from a regional air-quality model (about 11 km grid), "
+    "not a measurement at your school. Please use your own judgment alongside "
+    "any local reading."
+)
+
+# Stated limits, kept with the code so the blog cites the same numbers.
+# - PM-only index: CPCB's full index needs 3+ pollutants; we compute from PM only.
+# - Residual scale difference: about 12% of hours still differ from a US-AQI feed
+#   (see docs/screens/scale-check.txt); the CPCB conversion handles the bulk.
+STATED_LIMITS = {
+    "index": "PM-only (PM2.5, PM10); CPCB's full index uses 3+ pollutants",
+    "data": "modeled (CAMS ~11 km grid), not a station monitor",
+    "residual_misclassification_pct": 12,
+}
+
+
+def advisory_text(band: str) -> str:
+    """The action for a band, with the estimate disclaimer appended.
+
+    The disclaimer is mandatory, not optional, so no advisory can be generated
+    that reads as a measured fact.
+    """
+    action = ACTIONS.get(band, ACTIONS["moderate"])
+    return f"{action} {ESTIMATE_DISCLAIMER}"
+
 
 @dataclass(frozen=True)
 class TierState:
@@ -230,3 +266,23 @@ def next_state(state: TierState, new_aqi: float) -> TierState:
 def band_changed(old: TierState, new: TierState) -> bool:
     """True if the effective tier changed -> should trigger a new alert."""
     return old.tier != new.tier
+
+
+def next_state_safe(state: TierState, new_aqi: float, *, stale: bool = False) -> TierState:
+    """Like next_state, but refuses to DOWNGRADE on a stale reading.
+
+    A stale reading could be based on air that has since worsened, so adopting a
+    lower tier from it could relax a school's precautions unsafely. Upgrades and
+    same-tier refreshes still apply (more caution is always safe to add); only a
+    downgrade is held while the data is stale. When fresh data returns, normal
+    hysteresis resumes.
+    """
+    if stale:
+        new_band = aqi_to_band(new_aqi)
+        new_tier = TIER_OF_BAND[new_band]
+        if new_tier < state.tier:
+            # hold the current tier; do not adopt a downgrade from stale data
+            return TierState(tier=state.tier, band=state.band, aqi=new_aqi,
+                             prev_tier=state.prev_tier,
+                             pending_tier=new_tier, pending_count=0)
+    return next_state(state, new_aqi)

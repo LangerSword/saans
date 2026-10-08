@@ -101,3 +101,35 @@ Timestampped entries. After each task, append the block below. This is honest
 - **AWS service used and why:** none — offline. (DynamoDB two-table design; IAM enforced at template time.)
 - **Evidence:** docs/screens/pytest-rules.txt (71 passed), docs/screens/scale-check.txt,
   tests/test_cpcb_aqi.py (18 tests), src/core/rules.py.
+
+## 2026-10-09T03:58+05:30 — Task 3: ingest Lambda (provenance, nulls, staleness, snapshot)
+
+- **Goal:** ingest readings with full provenance, safe null handling, a staleness
+  rule, a snapshot fallback, and honest advisory text. No Bedrock needed, so no wait.
+- **What I built:** `src/core/ingest.py` — Reading dataclass carrying source, modeled
+  flag, raw pm2_5/pm10, computed-later AQI, and a breakpoint-table version tag.
+  `parse_open_meteo` keeps nulls as None (never 0), drops all-null hours, and keeps
+  partial hours. `is_stale` + `rules.next_state_safe` refuse to DOWNGRADE on a stale
+  reading (fail toward caution). Snapshot fixture in fixtures/ for offline demo.
+- **Null handling is the safety-critical bit:** a null coerced to 0 would compute as
+  AQI 0 ("Good") and tell a school the air was fine when we had no data. Tests assert
+  null stays None, a partial reading still computes from the other pollutant, an
+  all-null hour is dropped, and no null-pm2.5 hour collapses to a Good tier.
+- **Verified against the LIVE feed, not just the fixture:** parsed 24 readings,
+  provenance attached (source=open-meteo-cams, modeled=True, bp=cpcb-naqi-2014-pm-v1),
+  newest AQI=147.5 moderate, staleness correctly False. No real nulls in today's feed,
+  so the fixture's planted nulls carry that coverage.
+- **Attribution:** checked Open-Meteo terms — CC-BY 4.0 required, free tier is
+  non-commercial (<10k/day). Attribution string in ingest.ATTRIBUTION and
+  docs/ATTRIBUTION.md, for the dashboard and the blog.
+- **Advisory honesty:** every advisory now appends ESTIMATE_DISCLAIMER ("estimate from
+  a regional model ~11 km, not a measurement at your school; use your judgment
+  alongside any local reading"). STATED_LIMITS keeps the PM-only and 12% residual
+  numbers with the code so the blog cites the same figures. Tests enforce that no band
+  produces an advisory without the disclaimer.
+- **Evidence:** docs/screens/scale-check.txt re-captured with the date and the
+  tools/scale_check.py script behind it.
+- **AWS service used and why:** none yet — ingest is pure Python, offline-testable.
+  (EventBridge -> Lambda -> DynamoDB is the deploy path; not built this task.)
+- **Evidence:** 95 passed (.venv/bin/pytest), tests/test_ingest.py, tests/test_advisory.py,
+  src/core/ingest.py, fixtures/open-meteo-snapshot.json, docs/ATTRIBUTION.md.
