@@ -15,7 +15,19 @@ Used by the blog protocol — Hermes drafts blog sections from DEVLOG.md + DECIS
 - **Chose deterministic template fallback over a second LLM because** a second provider adds
   setup and another thing to debug without improving the demo. If Bedrock is down or throttled,
   the tier still decides and the alert still sends.
-- **Chose single-table DynamoDB over relational because** no ops overhead, serverless,
+- **Chose DynamoDB (two tables) over relational because** no ops overhead, serverless,
   on-demand — nothing to babysit during a 4-day event.
+- **Chose two DynamoDB tables (saans-state / saans-content) over one single table because**
+  with a single table, STATE and ADVISORY share the partition key `SCHOOL#<id>` and differ
+  only by sort key; `dynamodb:LeadingKeys` constrains only the partition key and so cannot
+  separate them. Splitting makes "the advisory lambda cannot write STATE" a literally-true
+  IAM claim rather than an overclaim. Cheap now, expensive to retrofit later.
+  The alternative (one table + "code path never writes STATE, enforced by a test") was
+  rejected as weaker — judges/readers who check the policy would catch the overclaim.
 - **Chose five small lambdas over one big lambda because** each step is independently
   testable and IAM boundaries are enforceable per step (rules is the only tier setter).
+- **Chose two-reading hysteresis on downgrades (not upgrades) because** upgrades are safety
+  events and must alert immediately; downgrades that flapped at a band boundary would spam the
+  principal with repeat alerts at ~100/101/200 boundaries.
+- **Chose seed schools on DIFFERENT Delhi stations because** the demo needs to show different
+  tiers on the same day, which a single city-average feed can't produce.

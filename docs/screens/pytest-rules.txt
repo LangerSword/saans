@@ -1,0 +1,47 @@
+# Task 2 acceptance — rules engine + seed
+# run: .venv/bin/pytest -q
+# date: 2026-10-08 21:57 UTC
+
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0 -- /home/lakshaya/projects/saans/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/lakshaya/projects/saans
+collecting ... collected 35 items
+
+tests/test_rules.py::TestBandEdges::test_edges[0-0] PASSED               [  2%]
+tests/test_rules.py::TestBandEdges::test_edges[50-0] PASSED              [  5%]
+tests/test_rules.py::TestBandEdges::test_edges[100-0] PASSED             [  8%]
+tests/test_rules.py::TestBandEdges::test_edges[101-1] PASSED             [ 11%]
+tests/test_rules.py::TestBandEdges::test_edges[200-1] PASSED             [ 14%]
+tests/test_rules.py::TestBandEdges::test_edges[201-2] PASSED             [ 17%]
+tests/test_rules.py::TestBandEdges::test_edges[300-2] PASSED             [ 20%]
+tests/test_rules.py::TestBandEdges::test_edges[301-3] PASSED             [ 22%]
+tests/test_rules.py::TestBandEdges::test_edges[400-3] PASSED             [ 25%]
+tests/test_rules.py::TestBandEdges::test_edges[401-4] PASSED             [ 28%]
+tests/test_rules.py::TestBandEdges::test_edges[500-4] PASSED             [ 31%]
+tests/test_rules.py::TestBandEdges::test_50_51_same_band PASSED          [ 34%]
+tests/test_rules.py::TestBandEdges::test_band_names PASSED               [ 37%]
+tests/test_rules.py::TestBandEdges::test_every_band_has_an_action PASSED [ 40%]
+tests/test_rules.py::TestBandEdges::test_negative_rejected PASSED        [ 42%]
+tests/test_rules.py::TestInitialState::test_first_reading_adopts_immediately PASSED [ 45%]
+tests/test_rules.py::TestHysteresis::test_upgrade_is_immediate PASSED    [ 48%]
+tests/test_rules.py::TestHysteresis::test_same_tier_refreshes PASSED     [ 51%]
+tests/test_rules.py::TestHysteresis::test_downgrade_needs_two_readings PASSED [ 54%]
+tests/test_rules.py::TestHysteresis::test_downgrade_resets_if_it_rises_back PASSED [ 57%]
+tests/test_rules.py::TestHysteresis::test_two_band_drop_needs_two_readings PASSED [ 60%]
+tests/test_rules.py::TestBandChanged::test_detects_transition PASSED     [ 62%]
+tests/test_rules.py::TestBandChanged::test_no_change_within_band PASSED  [ 65%]
+tests/test_rules.py::TestBandChanged::test_held_downgrade_is_not_a_change PASSED [ 68%]
+tests/test_seed.py::test_schools_map_to_distinct_stations PASSED         [ 71%]
+tests/test_seed.py::test_enough_schools_to_show_a_spread PASSED          [ 74%]
+tests/test_seed.py::test_every_school_points_at_a_known_station PASSED   [ 77%]
+tests/test_seed.py::test_every_station_has_coordinates_in_delhi PASSED   [ 80%]
+tests/test_seed.py::test_stations_are_actually_spread_out PASSED         [ 82%]
+tests/test_seed.py::test_school_ids_are_unique PASSED                    [ 85%]
+tests/test_seed.py::test_principal_is_our_controlled_inbox PASSED        [ 88%]
+tests/test_seed.py::test_languages_are_supported PASSED                  [ 91%]
+tests/test_seed.py::test_seed_record_shape PASSED                        [ 94%]
+tests/test_seed.py::test_station_record_shape PASSED                     [ 97%]
+tests/test_seed.py::test_state_is_not_seeded PASSED                      [100%]
+
+============================== 35 passed in 0.01s ==============================

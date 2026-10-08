@@ -86,23 +86,46 @@ and emails the principal → API Gateway + CloudFront serve the dashboard.
 | saans-notify | advisory | none | sns:Publish on one topic |
 | saans-api | state, advisory | none | read-only on one table |
 
-**Invariant: the rules Lambda is the only thing that sets a tier. The agent can only
-write advisory text.** (Diagram shows rules -> agent -> SNS; in SAM this is one
-invoke chain, but the boundary is enforced by IAM: advisory has no write path to STATE.)
+**Invariant: the rules Lambda is the only thing that sets a tier, and this is
+enforced by IAM, not just by convention. (Diagram shows rules -> agent -> SNS as
+one chain; in SAM this is one invoke chain.) The tier lives in table `saans-state`,
+which saans-advisory has NO write action on — so the agent is physically unable to
+set a tier. Tables are split precisely so `dynamodb:LeadingKeys` (which only
+constrains the partition key) isn't relied on to enforce this. See "Storage design"
+below.**
 
-### Single-table design (DynamoDB — no ops overhead)
+### Storage design — TWO tables so the IAM boundary is literally true
 
-- `PK=STATION#<id>, SK=READING#<iso-ts>`: raw AQI, TTL 7 days.
+**Why two tables (not one):** with a single table, STATE and ADVISORY share the
+partition key `SCHOOL#<id>` and differ only by sort key. DynamoDB's
+`dynamodb:LeadingKeys` condition constrains only the partition key, so IAM
+**cannot** separate STATE from ADVISORY in one table. We split the tables so the
+"advisory can't write STATE" boundary is enforced by IAM, not just by convention.
+
+**saans-state** (the tier lives here — only saans-rules writes it):
+- `PK=STATION#<id>, SK=READING#<iso-ts>`: raw AQI, TTL 7 days. (written by saans-ingest)
 - `PK=SCHOOL#<id>, SK=PROFILE`: name, station_id, principal_email, language.
-- `PK=SCHOOL#<id>, SK=STATE`: tier, aqi, since, prev_tier.
+- `PK=SCHOOL#<id>, SK=STATE`: tier, aqi, since, prev_tier. (written by saans-rules)
+
+**saans-content** (the words live here — only saans-advisory writes it):
 - `PK=SCHOOL#<id>, SK=ADVISORY`: text per language, generated_at, source (bedrock|template).
+
+### IAM boundaries (per the component contract)
+
+- **saans-rules** IAM allows `PutItem/UpdateItem` on saans-state only, and
+  `dynamodb:LeadingKeys` pinning its write path. saans-advisory gets **no write
+  action on saans-state at all** — the table is a different resource, so it is
+  *physically* unable to set a tier. This is the honest, enforceable claim.
+- saans-advisory IAM allows `PutItem` on saans-content + `bedrock:InvokeModel`
+  on one model ARN + read on saans-state. **No write action on saans-state.**
+- saans-notify IAM allows `sns:Publish` on one topic. saans-api: read-only on both.
 
 ### Why each service (blog architecture section)
 
 - **EventBridge** — schedule without a server. *Why not cron on a box:* no box to patch.
 - **Lambda** — each step small and independently testable. *Why not one big lambda:*
   IAM boundaries + offline unit tests per step.
-- **DynamoDB** — state with no ops overhead, single table. *Why not RDS:* serverless,
+- **DynamoDB** — state with no ops overhead, two tables (state and content). *Why not RDS:* serverless,
   on-demand, no cluster to babysit at 3 AM.
 - **Strands on Bedrock** — writes/localizes the advisory, the one job an LLM adds value.
   *Why not a template for everything:* localization across EN/HI/TE is exactly where an
