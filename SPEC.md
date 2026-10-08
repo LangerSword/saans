@@ -48,27 +48,79 @@ Band edges under test: 50/51, 100/101, 200/201, 300/301, 400/401.
 
 ## Architecture (deployed-first on AWS, ap-south-1)
 
+**AUTHORITATIVE DESIGN — matches the committed diagram (docs/screens/) and the
+component contract below. Every later session starts from this section.**
+
 ```
-EventBridge (sched)  ->  Ingest Lambda  ->  DynamoDB (readings)
-                                                    
-                         Advisory Lambda (Strands agent on Bedrock)
-                              input: tier + school  (tier from rules engine)
-                              output: short advisory EN/HI/TE
-                              fallback: deterministic template if Bedrock down
-
-                         Alert: SNS email  (dedup in DynamoDB state)
-
-                         API Gateway -> Dashboard: S3 + CloudFront (static page)
+[AQI feed: Open-Meteo]                       ┌──────────── S3 + CloudFront (static UI) ──> Principal (dashboard)
+        |                                    ^
+        v                                    |
+[EventBridge: every 15 min]                  |
+        |                                    |
+        v                                    |
+[Lambda ingest: fetch + clean] ──> [DynamoDB: AQI + schools] ──> [API Gateway: Lambda reader]
+                                              |
+                                              v
+                                    [Lambda rules: AQI -> tier]
+                                              |
+                                              v
+                                    [Strands agent: on Bedrock]
+                                     (writes+localizes advisory)
+                                              |
+                                              v
+                                    [SNS: dedupe + send] ──> Principal (email alert)
 ```
 
-- **Ingest Lambda**: fetch Open-Meteo per station, normalize, write DynamoDB.
-  Cached-snapshot fallback on failure.
-- **Advisory Lambda**: Bedrock/Strands localizes the advisory. Tier stays deterministic.
-  Deterministic EN/HI/TE templates are the fallback (not a second LLM).
-- **Seed**: 5–10 Delhi schools (name, nearest station, principal email, language).
-  Principal emails are OUR controlled addresses (SNS email endpoints must confirm
-  subscription — never point at a real school).
-- **UI**: one static page — big color status, "what to do today", last-updated time.
+Flow: EventBridge fires ingest every 15 min → ingest reads the feed (Open-Meteo,
+verified no-key) → writes readings to DynamoDB → rules Lambda reads state, sets the
+tier (the ONLY tier setter) → advisory Strands agent localizes the text → SNS dedupes
+and emails the principal → API Gateway + CloudFront serve the dashboard.
+
+### Component contract (IAM boundary — least privilege, one table)
+
+| Component | Reads | Writes | IAM boundary |
+| --- | --- | --- | --- |
+| saans-ingest | feed, snapshot in S3 | `READING#station` items | PutItem on one table, read one S3 prefix |
+| saans-rules | readings, school items | `STATE#school` (tier, since, prev_tier) | GetItem, Query, PutItem on one table |
+| saans-advisory | state, school | `ADVISORY#school` (en, hi, text) | bedrock:InvokeModel on one model ARN, one table |
+| saans-notify | advisory | none | sns:Publish on one topic |
+| saans-api | state, advisory | none | read-only on one table |
+
+**Invariant: the rules Lambda is the only thing that sets a tier. The agent can only
+write advisory text.** (Diagram shows rules -> agent -> SNS; in SAM this is one
+invoke chain, but the boundary is enforced by IAM: advisory has no write path to STATE.)
+
+### Single-table design (DynamoDB — no ops overhead)
+
+- `PK=STATION#<id>, SK=READING#<iso-ts>`: raw AQI, TTL 7 days.
+- `PK=SCHOOL#<id>, SK=PROFILE`: name, station_id, principal_email, language.
+- `PK=SCHOOL#<id>, SK=STATE`: tier, aqi, since, prev_tier.
+- `PK=SCHOOL#<id>, SK=ADVISORY`: text per language, generated_at, source (bedrock|template).
+
+### Why each service (blog architecture section)
+
+- **EventBridge** — schedule without a server. *Why not cron on a box:* no box to patch.
+- **Lambda** — each step small and independently testable. *Why not one big lambda:*
+  IAM boundaries + offline unit tests per step.
+- **DynamoDB** — state with no ops overhead, single table. *Why not RDS:* serverless,
+  on-demand, no cluster to babysit at 3 AM.
+- **Strands on Bedrock** — writes/localizes the advisory, the one job an LLM adds value.
+  *Why not a template for everything:* localization across EN/HI/TE is exactly where an
+  LLM earns its keep — but tier stays deterministic.
+- **SNS** — delivery with dedup. *Why not SES direct:* managed fan-out + retry.
+- **CloudFront + S3** — serves the principal dashboard. *Why not a running server:*
+  static, cached, cheap, no ops.
+
+## Build order (matches the diagram, one agent session each)
+
+1. ~~Spec + repo skeleton~~ ✓ (committed e3a0ed1)
+2. **Table + seed schools, then saans-rules with tests** (tier setter — do first, it's
+   the core invariant)
+3. saans-ingest with the snapshot fallback
+4. EventBridge wiring, stack in SAM
+5. saans-advisory with template fallback, then saans-notify
+6. saans-api, then the dashboard
+7. Blog + video
 
 ## AWS footprint (must be visible in the demo video)
 
