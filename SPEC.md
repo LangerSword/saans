@@ -86,13 +86,15 @@ and emails the principal → API Gateway + CloudFront serve the dashboard.
 | saans-notify | advisory | none | sns:Publish on one topic |
 | saans-api | state, advisory | none | read-only on one table |
 
-**Invariant: the rules Lambda is the only thing that sets a tier, and this is
-enforced by IAM, not just by convention. (Diagram shows rules -> agent -> SNS as
-one chain; in SAM this is one invoke chain.) The tier lives in table `saans-state`,
-which saans-advisory has NO write action on — so the agent is physically unable to
-set a tier. Tables are split precisely so `dynamodb:LeadingKeys` (which only
-constrains the partition key) isn't relied on to enforce this. See "Storage design"
-below.**
+**Invariant: the rules Lambda is the only thing that sets a tier. (Diagram shows rules -> agent -> SNS as
+one chain; in SAM this is one invoke chain.) The tier lives in table `saans-state`.
+The advisory Lambda's IAM role has NO write action on `saans-state`, so it is physically unable to set a
+tier.**
+
+STATUS: the two-table split (`saans-state` / `saans-content`) is the design that makes this claim
+enforceable. **It is not yet enforced** — no `template.yaml` exists, so no IAM policy has been created.
+The claim becomes a fact when the SAM template lands and the policy is verified against the actual IAM
+statements. Until then this is a design commitment, and it is labelled as such everywhere.
 
 ### Storage design — TWO tables so the IAM boundary is literally true
 

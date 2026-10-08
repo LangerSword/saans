@@ -70,3 +70,34 @@ Timestampped entries. After each task, append the block below. This is honest
 - **AWS service used and why:** none — offline tests only.
 - **Evidence:** docs/screens/pytest-rules.txt (35 passed), tests/test_seed.py,
   src/core/seed.py, SPEC.md, docs/DECISIONS.md.
+
+## 2026-10-09T03:49+05:30 — Task 2 verification + CPCB AQI conversion
+
+- **Goal:** verify Task 2's report against fresh runs, and fix the AQI scale before Task 3.
+- **Verification of my own Task 2 claim (per the evidence rule):** `git status` clean,
+  `git show --stat eccee7c` confirms tests/test_seed.py and src/core/seed.py are in the commit,
+  and a FRESH `.venv/bin/pytest` run (not the saved screenshot) gives the pass count.
+  The `principal_email` fix IS fully applied: each school carries the field and
+  `seed_records()` reads it. Verified against the committed blob, not the working tree.
+- **The scale problem (the important find):** Open-Meteo returns `us_aqi` (US EPA scale) plus raw
+  concentrations, and it is CAMS model output — gridded, 11km, not CPCB station monitors. US AQI is
+  NOT CPCB AQI. Measured on a live Delhi day, feeding `us_aqi` straight into our CPCB tier table put
+  **38% of hours in the wrong tier**. Fixed by computing CPCB AQI ourselves from pm2_5 and pm10.
+- **CPCB breakpoints corrected twice against the source.** First attempt used CPCB's calculator
+  "Breakpoints" sheet and made bands contiguous — did not reproduce CPCB's own anchors. Read the
+  authoritative CPCB National AQI report (Tables 3.5/3.6) and found the bands are each category's OWN
+  integer range: (31,60)->(51,100), not (30,60)->(51,100). Now reproduces CPCB's published example
+  exactly (31->51, 60->100; CPCB's prose "75 at 45" is rounded, exact is 74.66).
+- **Result after the fix:** misclassification drops 38% -> 12% (see docs/screens/scale-check.txt), and
+  the remaining 3 are genuine scale differences the conversion now handles. The conversion does real work.
+- **PM-only simplification, stated honestly:** CPCB's real rule needs 3+ pollutants including PM; we
+  have particulates only, so this is a PM-only index. Documented, not hidden. `test_pm_only_is_a_documented_simplification`
+  guards the claim.
+- **IAM claim downgraded to design, not fact:** no `template.yaml` exists yet, so "advisory cannot
+  write STATE" is a design commitment, enforced when the SAM template lands. Labelled in SPEC.
+- **CPCB / data.gov.in feed test (previously unreported):** CPCB app.cpcbccr.com 404, data.gov.in API
+  blocked. No live station feed works from here. Open-Meteo is the defensible primary, labelled as
+  modeled data in the video and blog.
+- **AWS service used and why:** none — offline. (DynamoDB two-table design; IAM enforced at template time.)
+- **Evidence:** docs/screens/pytest-rules.txt (71 passed), docs/screens/scale-check.txt,
+  tests/test_cpcb_aqi.py (18 tests), src/core/rules.py.

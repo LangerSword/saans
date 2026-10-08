@@ -3,16 +3,92 @@
 THE INVARIANT: this module is the only thing that sets a tier.
 The advisory agent can only write advisory text; it never sets a tier.
 
-AQI bands use the US AQI scale (Open-Meteo `us_aqi`), which is what the
-verified feed returns. School actions are SAANS's own draft (CPCB band
-thresholds), not copied from an official school-closure policy.
+AQI bands are the CPCB National AQI bands (2014), because the audience is Indian
+schools and the tiers map to CPCB categories.
+
+IMPORTANT: this module takes POLLUTANT CONCENTRATIONS (ug/m3), not a precomputed
+AQI. Open-Meteo's CAMS feed returns concentrations plus `us_aqi`, and US AQI is
+NOT CPCB AQI. Measured on a live Delhi day, feeding `us_aqi` straight in put
+38% of hours in the wrong tier (evidence: docs/screens/scale-check.txt). So we
+compute CPCB AQI ourselves from pm2_5 and pm10 using CPCB's breakpoints.
+
+CPCB sources:
+- Breakpoints: app.cpcbccr.com/ccr_docs/AQI-Calculator.xls ("Breakpoints" sheet)
+- Method:    app.cpcbccr.com/ccr_docs/How_AQI_Calculated.pdf (sub-index formula)
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
-# US AQI band edges (lower bound inclusive). Tiers 0..4.
-# (max_us_aqi_exclusive, band_name)
+# CPCB National AQI (2014) breakpoints, 24-hour, ug/m3.
+# (conc_low, conc_high, index_low, index_high). CPCB's bands are INTEGER-spaced
+# with a gap between them (band 1 ends at 30, band 2 starts at 31). CPCB states
+# Cp is the "truncated concentration", so sub_index() floors to an integer first;
+# with integer concentrations these bands are contiguous with no gaps.
+# Source: CPCB AQI Calculator, "Breakpoints" sheet.
+# CPCB National AQI (2014) breakpoints, 24-hour, ug/m3.
+# (conc_low, conc_high, index_low, index_high).
+#
+# SOURCE OF TRUTH: CPCB "National Air Quality Index" final report, Tables 3.5
+# (PM10) and 3.6 (PM2.5), fetched 2026-10-09 from
+# www.cpcb.nic.in/displaypdf.php. Those tables give the UPPER BOUND of each
+# AQI category:
+#   PM2.5: Good 30, Satisfactory 60, Moderate 90, Poor 120, Very Poor 250
+#   PM10:  Good 50, Satisfactory 100, Moderate 250, Poor 350, Very Poor 430
+# Category boundaries are shared between adjacent bands (30 is the top of Good
+# and the bottom of Satisfactory), so a value exactly on a boundary resolves
+# cleanly. CPCB also states Cp is the "truncated concentration", so sub_index()
+# floors to an integer before the lookup.
+#
+# Verified against CPCB's own worked example (How_AQI_Calculated.pdf):
+#   PM2.5 = 31 -> 51, 45 -> 75, 60 -> 100.
+# CPCB National AQI (2014) breakpoints, 24-hour, ug/m3.
+# (conc_low, conc_high, index_low, index_high).
+#
+# SOURCE OF TRUTH: CPCB "National Air Quality Index" report, Tables 3.5 (PM10)
+# and 3.6 (PM2.5), fetched 2026-10-09 from www.cpcb.nic.in. Each table lists the
+# concentration range of every category as INTEGER ranges:
+#   PM2.5: Good 0-30, Satisfactory 31-60, Moderate 61-90, Poor 91-120,
+#          Very Poor 121-250, Severe 251+ (top of scale 500)
+#   PM10:  Good 0-50, Satisfactory 51-100, Moderate 101-250, Poor 251-350,
+#          Very Poor 351-430, Severe 431+ (top of scale 500)
+#
+# The interpolation bounds below are each band's OWN integer range. This is not
+# cosmetic: a band written as (30,60)->(51,100) gives 52.6 at 31 ug/m3, but
+# (31,60)->(51,100) gives 51, which is what CPCB's worked example states
+# (How_AQI_Calculated.pdf: "the PM2.5 sub-index is 51 at a concentration of
+# 31 ug/m3, 75 at 45 ug/m3, and 100 at 60 ug/m3"). Both are asserted in
+# tests/test_cpcb_aqi.py, so the structure cannot silently drift.
+#
+# CPCB also states Cp is the "truncated concentration", so sub_index() floors to
+# an integer before the lookup; with integer concentrations these bands are
+# contiguous with no gaps.
+CPCB_BREAKPOINTS = {
+    "pm2_5": [
+        (0.0, 30.0, 0.0, 50.0),
+        (31.0, 60.0, 51.0, 100.0),
+        (61.0, 90.0, 101.0, 200.0),
+        (91.0, 120.0, 201.0, 300.0),
+        (121.0, 250.0, 301.0, 400.0),
+        (251.0, 380.0, 401.0, 500.0),
+    ],
+    "pm10": [
+        (0.0, 50.0, 0.0, 50.0),
+        (51.0, 100.0, 51.0, 100.0),
+        (101.0, 250.0, 101.0, 200.0),
+        (251.0, 350.0, 201.0, 300.0),
+        (351.0, 430.0, 301.0, 400.0),
+        (431.0, 510.0, 401.0, 500.0),
+    ],
+}
+
+# CPCB's real rule is "at least 3 pollutants, one of which must be PM2.5 or PM10".
+# The feed gives us particulates reliably, so we compute a PM-only index and say
+# so: a documented simplification, not the full CPCB index. In Delhi winter PM
+# dominates the index, but it is still an approximation.
+PM_ONLY_POLLUTANTS = ("pm2_5", "pm10")
+
+# CPCB AQI band edges. Tiers 0..4. (max_aqi_exclusive, band_name)
 BANDS = [
     (101, "good"),          # 0-100
     (201, "moderate"),      # 101-200
@@ -24,19 +100,60 @@ BANDS = [
 TIER_OF_BAND = {name: i for i, (_max, name) in enumerate(BANDS)}
 
 
-def aqi_to_band(us_aqi: float) -> str:
-    """Map a US AQI value to a band name. Pure function, testable offline."""
-    if us_aqi < 0:
-        raise ValueError(f"us_aqi must be >= 0, got {us_aqi}")
+def aqi_to_band(aqi: float) -> str:
+    """Map a CPCB AQI value to a band name. Pure function, testable offline."""
+    if aqi < 0:
+        raise ValueError(f"aqi must be >= 0, got {aqi}")
     for max_edge, name in BANDS:
-        if us_aqi < max_edge:
+        if aqi < max_edge:
             return name
     return "severe"  # unreachable, keeps type checkers happy
 
 
-def aqi_to_tier(us_aqi: float) -> int:
-    """US AQI value -> tier index 0..4."""
-    return TIER_OF_BAND[aqi_to_band(us_aqi)]
+def aqi_to_tier(aqi: float) -> int:
+    """CPCB AQI value -> tier index 0..4."""
+    return TIER_OF_BAND[aqi_to_band(aqi)]
+
+
+def sub_index(conc: float, pollutant: str) -> float:
+    """CPCB sub-index for one pollutant, via CPCB's published formula:
+
+        Ip = ((IHi - ILo) / (BPHi - BPLo)) * (Cp - BPLo) + ILo
+
+    Raises ValueError on a negative concentration or a value above the top band.
+    """
+    if conc < 0:
+        raise ValueError(f"{pollutant} concentration must be >= 0, got {conc}")
+    # CPCB: "Cp = truncated concentration of pollutant p". Floor to an integer
+    # so the integer-gapped bands resolve cleanly and we match CPCB's calculator.
+    conc = float(int(conc))
+    table = CPCB_BREAKPOINTS[pollutant]
+    for bp_lo, bp_hi, i_lo, i_hi in table:
+        if bp_lo <= conc <= bp_hi:
+            return (i_hi - i_lo) / (bp_hi - bp_lo) * (conc - bp_lo) + i_lo
+    raise ValueError(
+        f"{pollutant}={conc} is above the highest CPCB breakpoint {table[-1][1]}"
+    )
+
+
+def aqi_from_pm(pm2_5: Optional[float], pm10: Optional[float]) -> Tuple[float, str]:
+    """CPCB-style AQI from concentrations. Returns (aqi, dominant_pollutant).
+
+    CPCB's rule: overall AQI is the MAXIMUM sub-index across pollutants. We have
+    particulates, so this is a PM-only index (see PM_ONLY_POLLUTANTS).
+
+    At least one of PM2.5/PM10 must be present, because CPCB requires one of them
+    to compute an index at all.
+    """
+    subs = []
+    if pm2_5 is not None:
+        subs.append((sub_index(pm2_5, "pm2_5"), "pm2_5"))
+    if pm10 is not None:
+        subs.append((sub_index(pm10, "pm10"), "pm10"))
+    if not subs:
+        raise ValueError("need at least one of pm2_5 / pm10 to compute an AQI")
+    aqi, pollutant = max(subs, key=lambda t: t[0])
+    return round(aqi, 1), pollutant
 
 
 # School actions per band. SAANS's own draft — verify before the blog.

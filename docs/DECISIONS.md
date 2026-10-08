@@ -31,3 +31,14 @@ Used by the blog protocol — Hermes drafts blog sections from DEVLOG.md + DECIS
   principal with repeat alerts at ~100/101/200 boundaries.
 - **Chose seed schools on DIFFERENT Delhi stations because** the demo needs to show different
   tiers on the same day, which a single city-average feed can't produce.
+- **Chose to compute CPCB AQI from concentrations (not feed us_aqi in) because** US AQI is not CPCB
+  AQI. Measured on a live Delhi day, us_aqi put 38% of hours in the wrong CPCB tier; computing CPCB
+  AQI from pm2_5/pm10 with CPCB's own breakpoints drops that to 12%, and the remaining gap is a real
+  scale difference, not a bug. Anchor values are CPCB's own published example, asserted in tests.
+- **Chose Open-Meteo (CAMS model, labeled as modeled) as primary because** no live station feed is
+  reachable (CPCB 404, data.gov.in blocked). It is gridded model output, not CPCB monitors, and the
+  blog and video say so. PM-only index is a documented simplification, not the full CPCB 3-pollutant index.
+- **Chose to downgrade the IAM "cannot write STATE" claim to DESIGN (not fact) because** no
+  template.yaml exists yet, so no policy is created. It becomes a fact when the SAM template lands and
+  the policy is verified. Overclaiming it now would be exactly the failure the two-table split was meant
+  to prevent.
