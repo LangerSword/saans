@@ -133,3 +133,33 @@ Timestampped entries. After each task, append the block below. This is honest
   (EventBridge -> Lambda -> DynamoDB is the deploy path; not built this task.)
 - **Evidence:** 95 passed (.venv/bin/pytest), tests/test_ingest.py, tests/test_advisory.py,
   src/core/ingest.py, fixtures/open-meteo-snapshot.json, docs/ATTRIBUTION.md.
+
+## 2026-10-09T04:10+05:30 — Task 4: deployed slice (SAM), validated locally, deploy left to you
+
+- **Goal:** get "Built on AWS" real early with a thin deployed slice, not at the end. AWS Usage was
+  the biggest deduction last time (8/10).
+- **What I built:** `template.yaml` — EventBridge (hourly) → saans-ingest → DynamoDB saans-state →
+  saans-api (read-only). Region ap-south-1, Lambdas OUT of a VPC (no NAT cost; Open-Meteo needs
+  outbound, which default Lambda networking gives). Handlers: src/lambda_ingest.py, lambda_rules.py,
+  lambda_api.py — all reuse the pure core and import boto3 at invoke, not import, so the core stays
+  testable without AWS.
+- **IAM is least-privilege and audited:** local audit of the built template shows ZERO bare
+  `Action: *` / `Resource: *`. ingest + rules: write on saans-state only. api: READ ONLY. This is the
+  two-table boundary as an actual policy, not a convention.
+- **What fought back:** a `src/requirements.txt` (pinning boto3) broke `sam build` — SAM's pip
+  builder needs python3.13 on PATH and only 3.14 is installed here. Dropped it: boto3 is preinstalled
+  in the Lambda python3.13 runtime, so no bundling is needed. Build succeeds without it.
+- **Validated locally, NOT deployed:** `sam validate` valid, `sam build` succeeds, Open-Meteo
+  reachable (HTTP 200, confirming the no-VPC path), core imports without boto3, all handlers parse.
+  `sam deploy` is deliberately left to you — it is the one irreversible, cost-touching step.
+- **IAM claim status moved honestly:** from "design" to "policies written and audited, not yet
+  created in the account". It becomes ENFORCED only after you deploy and verify with
+  `aws iam get-role-policy`. SPEC says exactly this.
+- **AWS account confirmed:** 703651068111, via sts get-caller-identity. Budget alarms exist ($10 +
+  $15; actual $1.53). No default region set on this machine — runbook sets ap-south-1.
+- **AWS service used and why:** DynamoDB (state, no ops), Lambda (per-step, IAM-scoped), EventBridge
+  (hourly schedule, no server). API Gateway (read-only) via the SAM Api event.
+- **Evidence:** template.yaml, src/lambda_*.py, docs/DEPLOY.md (full runbook: pre-deploy checklist,
+  deploy command, post-deploy IAM verification, smoke test, teardown, LocalStack fallback).
+  Blog material now has files behind it: 38%→12% (scale-check.txt), failed CPCB feed (DEVLOG), IAM
+  downgrade + two-table (DECISIONS.md, SPEC).

@@ -92,9 +92,13 @@ The advisory Lambda's IAM role has NO write action on `saans-state`, so it is ph
 tier.**
 
 STATUS: the two-table split (`saans-state` / `saans-content`) is the design that makes this claim
-enforceable. **It is not yet enforced** — no `template.yaml` exists, so no IAM policy has been created.
-The claim becomes a fact when the SAM template lands and the policy is verified against the actual IAM
-statements. Until then this is a design commitment, and it is labelled as such everywhere.
+enforceable, and `template.yaml` now exists with the least-privilege policies written. A local IAM
+audit of the built template confirms **zero** bare `Action: *` or `Resource: *`: saans-ingest and
+saans-rules hold write on `saans-state` only, and saans-api holds **read only**. The claim becomes
+*enforced* the moment `sam deploy` creates these roles. Until that deploy runs, this is
+"policies written and audited, not yet created in the account" — one notch above design, one notch
+below enforced. Do not state it as enforced until the deployed roles are verified with
+`aws iam get-role-policy`.
 
 ### Storage design — TWO tables so the IAM boundary is literally true
 

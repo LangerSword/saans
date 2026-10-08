@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SAANS — School Air Action Notification System. Deployed slice:
+  EventBridge -> saans-ingest -> DynamoDB (saans-state) -> saans-api.
+  Advisory and SNS bolt on later. Region ap-south-1. Lambdas stay OUT of a VPC
+  (no NAT cost; outbound internet to Open-Meteo is fine by default).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 30
+    MemorySize: 256
+    # No VpcConfig anywhere: default Lambda networking reaches the internet,
+    # which saans-ingest needs for Open-Meteo, and avoids NAT gateway cost.
+
+Resources:
+
+  # ── data ────────────────────────────────────────────────────────────────
+  # saans-state: the tier lives here. Only saans-rules writes it. Split from
+  # saans-content so the advisory Lambda is physically unable to set a tier
+  # (dynamodb:LeadingKeys only constrains the partition key, so a single table
+  # could not separate STATE from ADVISORY). See SPEC "Storage design".
+  SaansStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "saans-state-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      # TTL on the READING sort keys is set at write time (7 days), not here.
+
+  # ── ingest ──────────────────────────────────────────────────────────────
+  # Runs on a schedule: fetch readings, compute CPCB AQI, write STATE.
+  SaansIngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "saans-ingest-${Environment}"
+      CodeUri: src/
+      Handler: lambda_ingest.handler
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref SaansStateTable
+          AWS_REGION_NAME: ap-south-1
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref SaansStateTable
+      Events:
+        # Hourly. EventBridge schedule; no server to run cron on.
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: "rate(1 hour)"
+            Name: !Sub "saans-ingest-hourly-${Environment}"
+            Enabled: true
+
+  # ── rules ───────────────────────────────────────────────────────────────
+  # The only writer of the tier. Kept as a separate function so its IAM write
+  # scope is narrow and auditable. Invoked by ingest after readings land.
+  SaansRulesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "saans-rules-${Environment}"
+      CodeUri: src/
+      Handler: lambda_rules.handler
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref SaansStateTable
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref SaansStateTable
+
+  # ── api ─────────────────────────────────────────────────────────────────
+  # Read-only dashboard backend. NO write action on saans-state.
+  SaansApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "saans-api-${Environment}"
+      CodeUri: src/
+      Handler: lambda_api.handler
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref SaansStateTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SaansStateTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /state/{school_id}
+            Method: get
+
+Outputs:
+  StateTableName:
+    Description: The DynamoDB table holding school state and readings.
+    Value: !Ref SaansStateTable
+  ApiUrl:
+    Description: The read-only dashboard API endpoint.
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/state/{school_id}"
+  IngestFunctionArn:
+    Value: !GetAtt SaansIngestFunction.Arn

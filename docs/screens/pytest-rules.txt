@@ -16,3 +16,10 @@
 ........................................................................ [ 75%]
 .......................                                                  [100%]
 95 passed in 0.06s
+
+# Task 4: deployed slice — sam validate + sam build (local only; deploy is yours)
+# date: 2026-10-08 22:40 UTC
+# sam validate: template.yaml is a valid SAM Template (exit 0)
+# sam build: Build Succeeded, 3 functions packaged (exit 0)
+# IAM audit: 0 bare Action:'*', 0 bare Resource:'*'
+# pytest: 95 passed in 0.06s
