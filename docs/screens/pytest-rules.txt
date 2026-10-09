@@ -33,3 +33,9 @@
 # pytest: 103 passed in 0.06s
 # runtime python3.13 confirmed supported (AWS docs: deprecation 2029-06-30)
 # API privacy: 8 new tests in tests/test_api_privacy.py, all pass
+
+# Throttling fix: UsagePlan -> stage MethodSettings — 2026-10-09 19:41 UTC
+# sam validate: OK
+# sam build: Build Succeeded
+# built-template check: MethodSettings on /*/* reads the params; 0 UsagePlan resources
+# pytest: 103 passed in 0.05s

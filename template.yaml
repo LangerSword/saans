@@ -138,18 +138,30 @@ Resources:
         AllowHeaders: "'Content-Type'"
         AllowMethods: "'GET'"
 
-  # Throttling on the stage: low steady rate + burst. A school dashboard is read
-  # a few times a minute, so this caps cost and abuse without affecting real use.
+  # Throttling on the STAGE via MethodSettings, NOT a UsagePlan. A UsagePlan only
+  # limits requests that carry an API key; this API is public with no key, so a
+  # UsagePlan would do nothing and the endpoint would fall back to account-wide
+  # defaults. MethodSettings on /*/* throttle every request, key or not. This is
+  # the setting that actually protects a public endpoint. Low rate + burst: a
+  # school dashboard is read a few times a minute.
   SaansApiThrottle:
-    Type: AWS::ApiGateway::UsagePlan
+    Type: AWS::ApiGateway::Stage
     Properties:
-      UsagePlanName: !Sub "saans-api-throttle-${Environment}"
-      Throttle:
-        RateLimit: !Ref ApiThrottlingRateLimit
-        BurstLimit: !Ref ApiThrottlingBurstLimit
-      ApiStages:
-        - ApiId: !Ref SaansApi
-          Stage: !Sub "${Environment}"
+      RestApiId: !Ref SaansApi
+      StageName: !Ref Environment
+      DeploymentId: !Ref SaansApiDeployment
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingRateLimit: !Ref ApiThrottlingRateLimit
+          ThrottlingBurstLimit: !Ref ApiThrottlingBurstLimit
+
+  SaansApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: SaansApiFunctionSaansApiPermission
+    Properties:
+      RestApiId: !Ref SaansApi
+      StageName: !Ref Environment
 
 Outputs:
   StateTableName:

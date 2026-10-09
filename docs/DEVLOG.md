@@ -190,3 +190,23 @@ Timestampped entries. After each task, append the block below. This is honest
 - **AWS service used and why:** API Gateway usage plan (throttling), Lambda env var (CORS origin).
 - **Evidence:** docs/screens/pytest-rules.txt (103 passed), src/lambda_api.py, tests/test_api_privacy.py,
   template.yaml, docs/DEPLOY.md (runbook updated for the new params + CORS/throttle).
+
+## 2026-10-10T01:11+05:30 — Throttling fix: UsagePlan -> stage MethodSettings
+
+- **Goal:** make throttling actually apply to a public, no-API-key endpoint.
+- **What was wrong:** throttling was an `AWS::ApiGateway::UsagePlan`. A UsagePlan only limits
+  requests that carry an API key. This API is public with no key, so the plan did nothing and the
+  endpoint fell back to account-wide default limits. It looked configured but protected nothing.
+- **The fix:** replaced it with an `AWS::ApiGateway::Stage` carrying `MethodSettings` on `/*/*` with
+  `ThrottlingRateLimit` and `ThrottlingBurstLimit`, both `!Ref`'d to the same two parameters. Stage
+  MethodSettings throttle every request, key or not. Added the explicit `AWS::ApiGateway::Deployment`
+  the Stage depends on.
+- **Verified in the built artifact, not just the source:** parsed `.aws-sam/build/template.yaml`,
+  confirmed MethodSettings on /*/* reads the parameters, and confirmed zero UsagePlan resources
+  remain. sam validate OK, sam build OK.
+- **NOT verified (needs deploy):** that 429s actually appear under load. After deploy, fire ~50 quick
+  requests and confirm 429s — don't trust the template alone.
+- **CORS note:** the default DashboardOrigin (https://saans.langersword.in) does not exist until the
+  dashboard domain is set up. If serving from the S3 website URL first, pass THAT origin as
+  DashboardOrigin at deploy, or the browser blocks the API calls; redeploy when the domain is live.
+- **Evidence:** docs/screens/pytest-rules.txt, template.yaml, .aws-sam/build/template.yaml (parsed).
