@@ -23,3 +23,13 @@
 # sam build: Build Succeeded, 3 functions packaged (exit 0)
 # IAM audit: 0 bare Action:'*', 0 bare Resource:'*'
 # pytest: 95 passed in 0.06s
+
+# Pre-deploy audit fixes (privacy, CORS, throttling, runtime) — 2026-10-09 19:21 UTC
+# sam validate: valid SAM Template (exit 0)
+# sam build: Build Succeeded (exit 0)
+# IAM audit: 0 bare Action:'*', 0 bare Resource:'*'
+#   ingest+rules: DynamoDBWritePolicy on saans-state only
+#   api: DynamoDBReadPolicy on saans-state only (READ ONLY)
+# pytest: 103 passed in 0.06s
+# runtime python3.13 confirmed supported (AWS docs: deprecation 2029-06-30)
+# API privacy: 8 new tests in tests/test_api_privacy.py, all pass

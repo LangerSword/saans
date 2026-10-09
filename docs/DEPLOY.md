@@ -10,6 +10,11 @@ Advisory and SNS are NOT in this slice; they bolt on after, and advisories alrea
 templates. Region **ap-south-1**. Lambdas stay **out of a VPC** (no NAT cost; Open-Meteo needs
 outbound internet, which default Lambda networking provides).
 
+The API is **privacy-hardened**: it returns only an allow-list of fields and never principal_email
+or any contact field (enforced by tests/test_api_privacy.py). CORS is scoped to the `DashboardOrigin`
+parameter (default `https://saans.langersword.in`), never `*`, and the stage is throttled
+(RateLimit 10 rps, BurstLimit 20 by default).
+
 ## Pre-deploy checklist (done locally)
 
 - [x] `sam validate` — template is valid.
@@ -42,8 +47,9 @@ export SAM_CLI_TELEMETRY=0
   --resolve-s3
 ```
 
-`--guided` prompts for a bucket and confirms before creating. Answer the prompts, let it create the
-stack, and copy the **ApiUrl** from the outputs.
+`--guided` prompts for a bucket and the parameters. Accept the defaults for `DashboardOrigin`
+(`https://saans.langersword.in`) and the throttling limits unless you have a reason to change them.
+Let it create the stack, and copy the **ApiUrl** from the outputs.
 
 ## After deploy — make the IAM claim true
 
@@ -65,6 +71,8 @@ aws lambda invoke --function-name saans-ingest-dev /tmp/out.json && cat /tmp/out
 aws lambda invoke --function-name saans-rules-dev /tmp/out.json && cat /tmp/out.json
 # then read the dashboard API
 curl "$API_URL/state/sch-001"
+# confirm CORS is scoped, not '*', and no contact field is present
+curl -s "$API_URL/state/sch-001" | grep -iE 'principal|email|"\\*"' && echo "LEAK OR WILDCARD" || echo "clean"
 ```
 
 ## Teardown (cost hygiene)

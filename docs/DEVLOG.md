@@ -163,3 +163,30 @@ Timestampped entries. After each task, append the block below. This is honest
   deploy command, post-deploy IAM verification, smoke test, teardown, LocalStack fallback).
   Blog material now has files behind it: 38%→12% (scale-check.txt), failed CPCB feed (DEVLOG), IAM
   downgrade + two-table (DECISIONS.md, SPEC).
+
+## 2026-10-09T04:52+05:30 — Pre-deploy audit: API privacy, CORS, throttling, runtime
+
+- **Goal:** get the deployed slice clean and safe before `sam deploy`. No AWS account changes; deploy
+  still left to you.
+- **API privacy (the important fix):** saans-api is public, so it must never return principal_email
+  or any contact field. Rebuilt the response from an explicit ALLOW-LIST of top-level and reading
+  keys, plus a recursive strip of any FORBIDDEN field as defence in depth. Previously it built the
+  body field-by-field and would have leaked anything a future table field added. 8 new tests
+  (tests/test_api_privacy.py) plant principal_email, phone, and a nested contact block on the STATE
+  and READING items and assert none survives, while the useful fields still do.
+- **CORS:** was hardcoded "*" in the Lambda. Now reads DASHBOARD_ORIGIN from env, set by the template
+  from a DashboardOrigin parameter (default https://saans.langersword.in, a real origin, not a
+  wildcard). The explicit SaansApi resource declares the same origin in its Cors block.
+- **Throttling:** added an ApiGateway UsagePlan (RateLimit 10 rps, BurstLimit 20) on the API stage,
+  both parameters. A school dashboard is read a few times a minute; this caps cost and abuse.
+- **Runtime confirmed:** python3.13 is a supported Lambda runtime (AWS docs: deprecation 2029-06-30).
+  Verified against AWS's runtimes page, not assumed, because the local aws-cli is v1 and has no
+  list-runtime-versions subcommand.
+- **What I could NOT verify:** the deployed behaviour. sam validate + sam build + the IAM audit and
+  pytest all run locally and pass, but the API's CORS header, throttling, and the no-leak guarantee
+  are only proven against a fake table. They must be confirmed against the live endpoint after you
+  deploy. The two-table IAM claim stays "policies written and audited" until you deploy and verify
+  with aws iam get-role-policy.
+- **AWS service used and why:** API Gateway usage plan (throttling), Lambda env var (CORS origin).
+- **Evidence:** docs/screens/pytest-rules.txt (103 passed), src/lambda_api.py, tests/test_api_privacy.py,
+  template.yaml, docs/DEPLOY.md (runbook updated for the new params + CORS/throttle).

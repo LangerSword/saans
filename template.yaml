@@ -12,6 +12,25 @@ Parameters:
     Default: dev
     AllowedValues: [dev, prod]
 
+  # The dashboard origin allowed by CORS. NOT "*": the API is public, so the
+  # allowed origin is a deploy-time parameter with a real default, and the Lambda
+  # reads it from DASHBOARD_ORIGIN. Change it at deploy if the dashboard moves.
+  DashboardOrigin:
+    Type: String
+    Default: "https://saans.langersword.in"
+    Description: Origin allowed by CORS on the API (e.g. https://saans.langersword.in). Do not set to "*".
+
+  # API Gateway throttling. Low by default: this is a school dashboard read a few
+  # times a minute, not a public high-traffic API. Caps cost and abuse.
+  ApiThrottlingRateLimit:
+    Type: Number
+    Default: 10
+    Description: Steady-state requests per second allowed on the API.
+  ApiThrottlingBurstLimit:
+    Type: Number
+    Default: 20
+    Description: Burst requests allowed on the API.
+
 Globals:
   Function:
     Runtime: python3.13
@@ -85,7 +104,8 @@ Resources:
             TableName: !Ref SaansStateTable
 
   # ── api ─────────────────────────────────────────────────────────────────
-  # Read-only dashboard backend. NO write action on saans-state.
+  # Read-only dashboard backend. NO write action on saans-state. CORS is scoped
+  # to DashboardOrigin (never "*"), and the stage is throttled.
   SaansApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -95,6 +115,7 @@ Resources:
       Environment:
         Variables:
           STATE_TABLE: !Ref SaansStateTable
+          DASHBOARD_ORIGIN: !Ref DashboardOrigin
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref SaansStateTable
@@ -104,6 +125,31 @@ Resources:
           Properties:
             Path: /state/{school_id}
             Method: get
+            RestApiId: !Ref SaansApi
+
+  # Explicit API so throttling + CORS are declared here and auditable, rather
+  # than relying on an implicit Serverless API.
+  SaansApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Sub "${Environment}"
+      Cors:
+        AllowOrigin: !Sub "'${DashboardOrigin}'"
+        AllowHeaders: "'Content-Type'"
+        AllowMethods: "'GET'"
+
+  # Throttling on the stage: low steady rate + burst. A school dashboard is read
+  # a few times a minute, so this caps cost and abuse without affecting real use.
+  SaansApiThrottle:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub "saans-api-throttle-${Environment}"
+      Throttle:
+        RateLimit: !Ref ApiThrottlingRateLimit
+        BurstLimit: !Ref ApiThrottlingBurstLimit
+      ApiStages:
+        - ApiId: !Ref SaansApi
+          Stage: !Sub "${Environment}"
 
 Outputs:
   StateTableName:
@@ -111,6 +157,9 @@ Outputs:
     Value: !Ref SaansStateTable
   ApiUrl:
     Description: The read-only dashboard API endpoint.
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${ServerlessRestApiProdStage}/state/{school_id}"
+    Value: !Sub "https://${SaansApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/state/{school_id}"
+  DashboardOrigin:
+    Description: The origin allowed by CORS.
+    Value: !Ref DashboardOrigin
   IngestFunctionArn:
     Value: !GetAtt SaansIngestFunction.Arn
