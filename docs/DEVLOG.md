@@ -210,3 +210,33 @@ Timestampped entries. After each task, append the block below. This is honest
   dashboard domain is set up. If serving from the S3 website URL first, pass THAT origin as
   DashboardOrigin at deploy, or the browser blocks the API calls; redeploy when the domain is live.
 - **Evidence:** docs/screens/pytest-rules.txt, template.yaml, .aws-sam/build/template.yaml (parsed).
+
+## 2026-10-12T03:15+05:30 — Task 4 completion: deployed live, smoke green, IAM enforced
+
+- **Goal:** get the slice live in the account, smoke-test it for real, and make every claim on it true.
+- **What I asked the agent:** deploy (attended), smoke live, verify IAM from the deployed roles, record honestly.
+- **What worked:** stack `saans-dev` deployed in ap-south-1 (EventBridge hourly → saans-ingest → DynamoDB
+  saans-state → saans-rules / saans-api). Live smoke: ingest wrote 5 real Delhi readings — 128.3
+  "moderate" (×4) and 94.9 "good" (×1), **different tiers on the same day — the demo beat as designed**;
+  rules set tiers; API 200 with scoped CORS and the full advisory + disclaimer + attribution; privacy
+  check clean. **110 tests green** (7 new for the Decimal module).
+- **What fought back (four real finds):**
+  1. Deploy #1 died at changeset: "Unresolved resource dependencies [SaansApiFunctionSaansApiPermission]"
+     — the hand-rolled AWS::ApiGateway::Stage + Deployment cannot see SAM's implicit permission ID (and
+     a manual stage collides with the stage SAM creates for the API). Fixed by moving throttling to
+     Serverless::Api's native MethodSettings. The pre-deploy "verified in the built artifact" check
+     could not catch this — only a real changeset validates.
+  2. Ingest: "Float types are not supported. Use Decimal types instead." — DynamoDB rejects Python
+     floats. Added `core/ddb.py` (to_ddb/from_ddb) on every write, and on the API read path (reads
+     return Decimal; `json.dumps` refuses it).
+  3. Rules: AccessDenied `dynamodb:Query` — the AWS-managed DynamoDBWritePolicy both over-grants writes
+     and under-grants reads. Replaced all three functions with hand-scoped inline policies:
+     ingest=PutItem only; rules=GetItem/Query/PutItem; api=GetItem/Query. The smoke caught what the
+     static audit couldn't: "no wildcards" is not "sufficient actions".
+  4. aws-cli v1 quirks (recorded so the next session doesn't re-pay): no `--cli-binary-format`;
+     `--payload '{}'` passes literally.
+- **AWS service used and why:** first live usage — Lambda (per-step compute), DynamoDB (state),
+  API Gateway (read-only endpoint), EventBridge (hourly schedule). API live:
+  `https://v3btuzxvz0.execute-api.ap-south-1.amazonaws.com/dev/state/{school_id}`.
+  **Cost: $0.00** (CE daily: $0.0000000036).
+- **Evidence:** docs/screens/deploy-smoke.txt, docs/screens/iam-verify.txt, docs/screens/pytest-rules.txt.

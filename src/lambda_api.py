@@ -46,6 +46,9 @@ def _cors_origin():
 
 
 def _resp(status, body):
+    # from_ddb: DynamoDB returns every number as Decimal (integers included) and
+    # json.dumps refuses Decimal. Convert back to int/float before serialising.
+    from core import ddb
     return {
         "statusCode": status,
         "headers": {
@@ -53,7 +56,7 @@ def _resp(status, body):
             "Access-Control-Allow-Origin": _cors_origin(),
             "Vary": "Origin",
         },
-        "body": json.dumps(body, ensure_ascii=False),
+        "body": json.dumps(ddb.from_ddb(body), ensure_ascii=False),
     }
 
 

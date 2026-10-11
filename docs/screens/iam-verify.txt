@@ -1,0 +1,52 @@
+=== SAANS IAM verification — 2026-10-12 03:33:24 IST ===
+roles: saans-dev-SaansApiFunctionRole-qsfw9M1LPQVL	saans-dev-SaansIngestFunctionRole-XWOyHZKsi9BG	saans-dev-SaansRulesFunctionRole-AGZXGRJsISB6
+
+=== role: saans-dev-SaansApiFunctionRole-qsfw9M1LPQVL ===
+--- inline policy: SaansApiFunctionRolePolicy0 ---
+{
+    "Statement": [
+        {
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Query"
+            ],
+            "Resource": "arn:aws:dynamodb:ap-south-1:703651068111:table/saans-state-dev",
+            "Effect": "Allow"
+        }
+    ]
+}
+
+=== role: saans-dev-SaansIngestFunctionRole-XWOyHZKsi9BG ===
+--- inline policy: SaansIngestFunctionRolePolicy0 ---
+{
+    "Statement": [
+        {
+            "Action": [
+                "dynamodb:PutItem"
+            ],
+            "Resource": "arn:aws:dynamodb:ap-south-1:703651068111:table/saans-state-dev",
+            "Effect": "Allow"
+        }
+    ]
+}
+
+=== role: saans-dev-SaansRulesFunctionRole-AGZXGRJsISB6 ===
+--- inline policy: SaansRulesFunctionRolePolicy0 ---
+{
+    "Statement": [
+        {
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Query",
+                "dynamodb:PutItem"
+            ],
+            "Resource": "arn:aws:dynamodb:ap-south-1:703651068111:table/saans-state-dev",
+            "Effect": "Allow"
+        }
+    ]
+}
+
+=== cost check (last 3 days, us-east-1 endpoint) ===
+2026-10-09	0.0000000036
+2026-10-10	0.0000000036
+2026-10-11	0.0000000018

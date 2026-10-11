@@ -50,7 +50,7 @@ def _state_from_item(item, aqi):
 
 
 def handler(event, context=None):
-    from core import rules
+    from core import ddb, rules
     table = _table()
     results = []
 
@@ -74,7 +74,7 @@ def handler(event, context=None):
         new_state = rules.next_state_safe(state, aqi, stale=stale)
 
         # Write the tier. This STATE item is what only saans-rules may write.
-        table.put_item(Item={
+        table.put_item(Item=ddb.to_ddb({
             "PK": f"SCHOOL#{school_id}",
             "SK": "STATE",
             "tier": new_state.tier,
@@ -85,7 +85,7 @@ def handler(event, context=None):
             "pending_count": new_state.pending_count,
             "stale_input": stale,
             "breakpoint_version": reading.get("breakpoint_version"),
-        })
+        }))
         results.append({
             "school_id": school_id, "tier": new_state.tier,
             "band": new_state.band, "changed": rules.band_changed(state, new_state),

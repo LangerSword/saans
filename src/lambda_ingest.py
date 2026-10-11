@@ -21,7 +21,7 @@ def _table():
 def handler(event, context=None):
     # Imported here (not at module top) so unit tests of the pure core never need
     # boto3, and so a missing dep fails fast at invoke, not at cold import.
-    from core import ingest, rules, seed
+    from core import ddb, ingest, rules, seed
 
     table = _table()
     wrote = 0
@@ -58,7 +58,7 @@ def handler(event, context=None):
             "stale": stale,
             "ttl": int(time.time()) + 7 * 24 * 3600,   # raw readings expire in 7 days
         }
-        table.put_item(Item=item)
+        table.put_item(Item=ddb.to_ddb(item))
         wrote += 1
         summary.append({
             "school_id": school["school_id"], "aqi": aqi, "band": band,

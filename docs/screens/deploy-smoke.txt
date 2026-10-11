@@ -1,0 +1,130 @@
+=== SAANS live smoke test — 2026-10-12 03:32:54 IST ===
+
+--- 1. invoke saans-ingest-dev (live Open-Meteo fetch -> readings) ---
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{
+ "wrote": 5,
+ "readings": [
+  {
+   "school_id": "sch-001",
+   "aqi": 128.3,
+   "band": "moderate",
+   "stale": false,
+   "dominant": "pm2_5"
+  },
+  {
+   "school_id": "sch-002",
+   "aqi": 128.3,
+   "band": "moderate",
+   "stale": false,
+   "dominant": "pm2_5"
+  },
+  {
+   "school_id": "sch-003",
+   "aqi": 128.3,
+   "band": "moderate",
+   "stale": false,
+   "dominant": "pm2_5"
+  },
+  {
+   "school_id": "sch-004",
+   "aqi": 128.3,
+   "band": "moderate",
+   "stale": false,
+   "dominant": "pm2_5"
+  },
+  {
+   "school_id": "sch-005",
+   "aqi": 94.9,
+   "band": "good",
+   "stale": false,
+   "dominant": "pm2_5"
+  }
+ ]
+}
+
+--- 2. invoke saans-rules-dev (sets tiers; the only tier writer) ---
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{
+ "updated": [
+  {
+   "school_id": "sch-001",
+   "tier": 1,
+   "band": "moderate",
+   "changed": false,
+   "stale_input": false
+  },
+  {
+   "school_id": "sch-002",
+   "tier": 1,
+   "band": "moderate",
+   "changed": false,
+   "stale_input": false
+  },
+  {
+   "school_id": "sch-003",
+   "tier": 1,
+   "band": "moderate",
+   "changed": false,
+   "stale_input": false
+  },
+  {
+   "school_id": "sch-004",
+   "tier": 1,
+   "band": "moderate",
+   "changed": false,
+   "stale_input": false
+  },
+  {
+   "school_id": "sch-005",
+   "tier": 0,
+   "band": "good",
+   "changed": false,
+   "stale_input": false
+  }
+ ]
+}
+
+--- 3. live API read sch-001 ---
+HTTP/2 200 
+access-control-allow-origin: https://saans.langersword.in
+{
+    "school_id": "sch-001",
+    "tier": 1,
+    "band": "moderate",
+    "aqi": 128.3,
+    "advisory": "Sensitive students (asthma) limit outdoor exertion. This is an estimate from a regional air-quality model (about 11 km grid), not a measurement at your school. Please use your own judgment alongside any local reading.",
+    "attribution": "Open-Meteo.com from CAMS, CC-BY 4.0. Modeled, not a station measurement.",
+    "limits": {
+        "index": "PM-only (PM2.5, PM10); CPCB's full index uses 3+ pollutants",
+        "data": "modeled (CAMS ~11 km grid), not a station monitor",
+        "residual_misclassification_pct": 12
+    },
+    "state": {
+        "prev_tier": null,
+        "pending_tier": null,
+        "pending_count": 0,
+        "stale_input": false,
+        "breakpoint_version": "cpcb-naqi-2014-pm-v1"
+    },
+    "latest_reading": {
+        "source": "open-meteo-cams",
+        "modeled": true,
+        "aqi": 128.3,
+        "pm2_5": 69.6,
+        "dominant_pollutant": "pm2_5",
+        "pm10": 86.1,
+        "breakpoint_version": "cpcb-naqi-2014-pm-v1",
+        "stale": false,
+        "timestamp_utc": "2026-10-12T23:00"
+    }
+}
+
+--- 4. privacy check ---
+clean: no contact fields

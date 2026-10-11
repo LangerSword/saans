@@ -91,14 +91,17 @@ one chain; in SAM this is one invoke chain.) The tier lives in table `saans-stat
 The advisory Lambda's IAM role has NO write action on `saans-state`, so it is physically unable to set a
 tier.**
 
-STATUS: the two-table split (`saans-state` / `saans-content`) is the design that makes this claim
-enforceable, and `template.yaml` now exists with the least-privilege policies written. A local IAM
-audit of the built template confirms **zero** bare `Action: *` or `Resource: *`: saans-ingest and
-saans-rules hold write on `saans-state` only, and saans-api holds **read only**. The claim becomes
-*enforced* the moment `sam deploy` creates these roles. Until that deploy runs, this is
-"policies written and audited, not yet created in the account" — one notch above design, one notch
-below enforced. Do not state it as enforced until the deployed roles are verified with
-`aws iam get-role-policy`.
+STATUS: **ENFORCED for the deployed slice, verified 2026-10-12 against the live stack.** `saans-dev`
+is deployed in ap-south-1 (`aws iam get-role-policy` readback; evidence: docs/screens/iam-verify.txt):
+
+- **saans-api**: `dynamodb:GetItem`, `dynamodb:Query` — **read only**.
+- **saans-ingest**: `dynamodb:PutItem` only.
+- **saans-rules**: `dynamodb:GetItem`, `dynamodb:Query`, `dynamodb:PutItem` — the only role with a STATE write.
+
+Each statement names exactly one resource (the `saans-state-dev` table ARN); zero wildcards anywhere.
+The `saans-advisory`/`saans-notify` pair is not deployed yet; when it lands it gets **no write action
+on `saans-state`**, and the split tables keep that boundary checkable in the policy rather than by
+convention.
 
 ### Storage design — TWO tables so the IAM boundary is literally true
 
