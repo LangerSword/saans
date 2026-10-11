@@ -31,6 +31,14 @@ Used by the blog protocol — Hermes drafts blog sections from DEVLOG.md + DECIS
   principal with repeat alerts at ~100/101/200 boundaries.
 - **Chose seed schools on DIFFERENT Delhi stations because** the demo needs to show different
   tiers on the same day, which a single city-average feed can't produce.
+- **Chose Amazon Nova (apac inference profile) over Anthropic models for the advisory because**
+  third-party models on this account are blocked by a Marketplace payment-instrument issue,
+  while Nova is first-party (no Marketplace needed) and handles EN/HI/TE.
+- **Chose a thread-level wall-clock bound around the model call over trusting SDK timeouts
+  because** the Strands SDK demonstrably hangs in Lambda under throttling (120s, no logs);
+  the alert path must never be hostage to the model. Template fallback = the retry strategy.
+- **Chose escalation-bypasses-cooldown, 12h cooldown otherwise for alerts because** worsening
+  air is a safety event (alert now), while boundary flaps must not spam the principal.
 - **Chose to compute CPCB AQI from concentrations (not feed us_aqi in) because** US AQI is not CPCB
   AQI. Measured on a live Delhi day, us_aqi put 38% of hours in the wrong CPCB tier; computing CPCB
   AQI from pm2_5/pm10 with CPCB's own breakpoints drops that to 12%, and the remaining gap is a real

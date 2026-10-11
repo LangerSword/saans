@@ -1,0 +1,4 @@
+# Advisory lambda needs the Strands Agents SDK (Bedrock). Shared CodeUri means
+# every function in this stack installs it — acceptable at this scale; a
+# production layout would split per-function code directories.
+strands-agents==1.59.0

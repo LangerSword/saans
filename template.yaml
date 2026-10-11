@@ -31,6 +31,25 @@ Parameters:
     Default: 20
     Description: Burst requests allowed on the API.
 
+  # The Bedrock model for advisory wording: an APAC cross-region inference
+  # profile of Amazon's first-party Nova (no Marketplace subscription needed,
+  # unlike third-party models). Strands calls it via the Converse API.
+  BedrockModelId:
+    Type: String
+    Default: "apac.amazon.nova-lite-v1:0"
+    Description: Inference profile id used by saans-advisory (Strands on Bedrock).
+  BedrockFoundationModelId:
+    Type: String
+    Default: "amazon.nova-lite-v1:0"
+    Description: Underlying foundation model for the profile (IAM resource only).
+
+  # Where the demo alert email goes. SNS sends a one-click confirmation first —
+  # nothing arrives until that link is clicked.
+  AlertEmail:
+    Type: String
+    Default: "saans-demo@langersword.in"
+    Description: Email endpoint for the SNS alert subscription (must be confirmed).
+
 Globals:
   Function:
     Runtime: python3.13
@@ -62,6 +81,25 @@ Resources:
         - AttributeName: SK
           KeyType: RANGE
       # TTL on the READING sort keys is set at write time (7 days), not here.
+
+  # saans-content: the advisory text lives here. Only saans-advisory writes the
+  # item; saans-notify updates ONLY the delivery receipt (alerted_at, delivered)
+  # on it. Split from saans-state so no advisory/notify role can write a tier.
+  SaansContentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "saans-content-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
 
   # ── ingest ──────────────────────────────────────────────────────────────
   # Runs on a schedule: fetch readings, compute CPCB AQI, write STATE.
@@ -103,6 +141,7 @@ Resources:
       Environment:
         Variables:
           STATE_TABLE: !Ref SaansStateTable
+          ADVISORY_FUNCTION: !Ref SaansAdvisoryFunction
       # Least privilege, hand-scoped. Was AWS-managed DynamoDBWritePolicy, which
       # both over-granted writes and under-granted reads — the live smoke test
       # caught the missing Query. GetItem/Query read the readings, PutItem for STATE.
@@ -111,6 +150,96 @@ Resources:
             - Effect: Allow
               Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:PutItem]
               Resource: !GetAtt SaansStateTable.Arn
+        - Statement:
+            - Effect: Allow
+              Action: [lambda:InvokeFunction]
+              Resource: !GetAtt SaansAdvisoryFunction.Arn
+
+  # ── alerts ──────────────────────────────────────────────────────────────
+  # One topic. The email endpoint needs a one-click confirmation before it
+  # receives anything — expected, and part of the setup.
+  SaansAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "saans-alerts-${Environment}"
+
+  SaansAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+      TopicArn: !Ref SaansAlertsTopic
+
+  # ── notify ──────────────────────────────────────────────────────────────
+  # The only sender. Applies the dedupe policy, publishes to SNS, writes the
+  # delivery receipt back onto the ADVISORY item. NO write action on
+  # saans-state — it can never touch a tier.
+  SaansNotifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "saans-notify-${Environment}"
+      CodeUri: src/
+      Handler: lambda_notify.handler
+      Environment:
+        Variables:
+          CONTENT_TABLE: !Ref SaansContentTable
+          SNS_TOPIC_ARN: !Ref SaansAlertsTopic
+          DASHBOARD_URL: !Ref DashboardOrigin
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+              Resource: !GetAtt SaansContentTable.Arn
+        - Statement:
+            - Effect: Allow
+              Action: [sns:Publish]
+              Resource: !Ref SaansAlertsTopic
+
+  # ── advisory ────────────────────────────────────────────────────────────
+  # Words + localizes the advisory (Strands Agents SDK on Bedrock); writes
+  # ADVISORY items to saans-content. NO write action on saans-state — the
+  # tier physically cannot change here. The deterministic template fallback
+  # keeps the alert path alive when the model is throttled or down.
+  SaansAdvisoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "saans-advisory-${Environment}"
+      CodeUri: src/
+      Handler: lambda_advisory.handler
+      Timeout: 120
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref SaansStateTable
+          CONTENT_TABLE: !Ref SaansContentTable
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_REGION: ap-south-1
+          NOTIFY_FUNCTION: !Ref SaansNotifyFunction
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:Query]
+              Resource: !GetAtt SaansStateTable.Arn
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:PutItem]
+              Resource: !GetAtt SaansContentTable.Arn
+        # Strands calls Bedrock's Converse APIs. A live AccessDenied named the
+        # real permissions: Converse -> bedrock:InvokeModel,
+        # ConverseStream -> bedrock:InvokeModelWithResponseStream (the
+        # bedrock:Converse* action names are NOT what the API authorizes).
+        # Scoped to ONE model: the inference profile + its underlying foundation
+        # model. The region wildcard on the foundation-model ARN is AWS's own
+        # documented pattern for cross-region inference profiles.
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+              Resource:
+                - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}"
+                - !Sub "arn:aws:bedrock:*::foundation-model/${BedrockFoundationModelId}"
+        - Statement:
+            - Effect: Allow
+              Action: [lambda:InvokeFunction]
+              Resource: !GetAtt SaansNotifyFunction.Arn
 
   # ── api ─────────────────────────────────────────────────────────────────
   # Read-only dashboard backend. NO write action on saans-state. CORS is scoped
@@ -174,3 +303,9 @@ Outputs:
     Value: !Ref DashboardOrigin
   IngestFunctionArn:
     Value: !GetAtt SaansIngestFunction.Arn
+  AdvisoryFunctionArn:
+    Value: !GetAtt SaansAdvisoryFunction.Arn
+  NotifyFunctionArn:
+    Value: !GetAtt SaansNotifyFunction.Arn
+  AlertsTopicArn:
+    Value: !Ref SaansAlertsTopic

@@ -88,8 +88,25 @@ def handler(event, context=None):
         }))
         results.append({
             "school_id": school_id, "tier": new_state.tier,
-            "band": new_state.band, "changed": rules.band_changed(state, new_state),
+            "band": new_state.band,
+            # A first-ever STATE counts as changed: it is news to the principal.
+            "changed": (state_item is None) or rules.band_changed(state, new_state),
             "stale_input": stale,
         })
+
+    # Chain: hand the changed schools to the advisory step (async, best-effort).
+    # The tier has already landed; a failed hand-off must not fail this run.
+    changed = [r["school_id"] for r in results if r.get("changed")]
+    if changed:
+        try:
+            import boto3
+            fn = os.environ.get("ADVISORY_FUNCTION")
+            if fn:
+                boto3.client("lambda").invoke(
+                    FunctionName=fn, InvocationType="Event",
+                    Payload=json.dumps({"school_ids": changed}),
+                )
+        except Exception as e:
+            print(f"rules: advisory invoke failed: {e}")
 
     return {"statusCode": 200, "body": json.dumps({"updated": results})}

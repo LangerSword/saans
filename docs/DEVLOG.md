@@ -240,3 +240,18 @@ Timestampped entries. After each task, append the block below. This is honest
   `https://v3btuzxvz0.execute-api.ap-south-1.amazonaws.com/dev/state/{school_id}`.
   **Cost: $0.00** (CE daily: $0.0000000036).
 - **Evidence:** docs/screens/deploy-smoke.txt, docs/screens/iam-verify.txt, docs/screens/pytest-rules.txt.
+
+## 2026-10-12T05:05+05:30 — Task 5: advisory + notify (Strands on Bedrock, template fallback, SNS)
+
+- **Goal:** bolt advisory wording + delivery onto the live slice; keep the alert path alive when the model is unavailable.
+- **What I asked the agent:** build saans-advisory (Strands on Bedrock, EN/HI/TE, template fallback) + saans-notify (SNS + dedupe), wire rules→advisory→notify, deploy, smoke live.
+- **What worked:** deployed and smoked live. Chain verified: rules (changed schools) → advisory → notify → SNS publish; delivery receipt written on the ADVISORY item. Dedupe verified: 4 sent ("first advisory"), 1 held (good tier). Advisory stored EN/HI/TE with the estimate disclaimer. Fallback is bulletproof: 5/5 schools produced advisories with the model unavailable.
+- **What fought back (five finds):**
+  1. **Bedrock access, two-layer:** Anthropic models are blocked on this account by `INVALID_PAYMENT_INSTRUMENT` (Marketplace subscription can't complete — billing fix, optional). First-party **Amazon Nova needs no Marketplace** → chose `apac.amazon.nova-lite-v1:0` (cross-region inference profile). A daily token quota ("Too many tokens per day") is exhausted account-wide; the fallback carries until it resets.
+  2. **The Converse APIs authorize under `bedrock:InvokeModel` / `InvokeModelWithResponseStream`** — NOT the `bedrock:Converse*` action names. A live AccessDenied naming the action proved it; IAM grants exactly those two on one model (profile + foundation ARNs).
+  3. **Strands SDK hangs past its own timeouts inside Lambda** when the model call is throttled (120s of silence, no logs, even with a botocore `max_attempts=1` client config). Fixed with a hard thread-level bound (20s per call) + a 90s run deadline → the fallback always proceeds. The template fallback IS the retry strategy.
+  4. **DynamoDB NULLs deserialize as None:** `"alerted_at" in prev` passed while `int(prev["alerted_at"])` crashed. None-safe checks now; the first full run died here.
+  5. **aws-cli v1:** its default 60s read timeout + retries turned one slow invoke into a 5-minute hang. Use `--cli-read-timeout 200`.
+- **AWS service used and why:** Bedrock (model wording — falling back to templates while the quota is exhausted), SNS (delivery), Lambda + DynamoDB (chain + saans-content).
+- **Evidence:** docs/screens/t5-smoke.txt (chain test, dedupe decisions, receipts, final fallback run).
+- **OPEN:** live Bedrock verification when the daily quota resets; SNS email confirmation click (needs a confirmable inbox); Anthropic payment-instrument fix is optional (third-party models only).

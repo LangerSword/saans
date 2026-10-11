@@ -1,0 +1,122 @@
+=== 1. invoke saans-advisory-dev {} ===
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{
+ "advisories": [
+  {
+   "school_id": "sch-001",
+   "source": "template",
+   "band": "moderate",
+   "note": "bedrock unavailable: AccessDeniedException"
+  },
+  {
+   "school_id": "sch-002",
+   "source": "template",
+   "band": "moderate",
+   "note": "bedrock unavailable: AccessDeniedException"
+  },
+  {
+   "school_id": "sch-003",
+   "source": "template",
+   "band": "moderate",
+   "note": "bedrock unavailable: AccessDeniedException"
+  },
+  {
+   "school_id": "sch-004",
+   "source": "template",
+   "band": "moderate",
+   "note": "bedrock unavailable: AccessDeniedException"
+  },
+  {
+   "school_id": "sch-005",
+   "source": "template",
+   "band": "good",
+   "note": "bedrock unavailable: AccessDeniedException"
+  }
+ ]
+}
+
+=== 2. invoke saans-notify-dev {} ===
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+{
+ "notify": [
+  {
+   "school_id": "sch-001",
+   "sent": true,
+   "reason": "first advisory"
+  },
+  {
+   "school_id": "sch-002",
+   "sent": true,
+   "reason": "first advisory"
+  },
+  {
+   "school_id": "sch-003",
+   "sent": true,
+   "reason": "first advisory"
+  },
+  {
+   "school_id": "sch-004",
+   "sent": true,
+   "reason": "first advisory"
+  },
+  {
+   "school_id": "sch-005",
+   "sent": false,
+   "reason": "first advisory"
+  }
+ ]
+}
+
+=== 3. SNS subscription state ===
+topic: arn:aws:sns:ap-south-1:703651068111:saans-alerts-dev
+email	saans-demo@langersword.in	PendingConfirmation
+
+=== 4. content item sch-001 ===
+{
+    "source": "template",
+    "tier": "1",
+    "band": "moderate",
+    "alerted_at": "1791757797",
+    "delivered": true,
+    "en": "Sensitive students (asthma) limit outdoor exertion. This is an estimate from a regional air-quality model (about 11 km grid), not a measurement at your school. Please use your own judgment alongside any local reading."
+}
+
+=== 5. chain test: delete sch-003 STATE -> rules -> async chain ===
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+[('sch-001', False), ('sch-002', False), ('sch-003', True), ('sch-004', False), ('sch-005', False)]
+--- sch-003 advisory after chain ---
+{
+    "generated_at": "1791757809",
+    "source": "template",
+    "prev_tier": null,
+    "alerted_at": "1791757797"
+}
+
+=== FINAL T5 verification — 2026-10-12 05:04:35 IST ===
+--- quota re-test (nova-lite apac) ---
+
+An error occurred (ThrottlingException) when calling the InvokeModel operation (reached max retries: 4): Too many tokens per day, please wait before trying again.
+Traceback (most recent call last):
+--- advisory invoke ---
+{
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+
+real	1m41.993s
+user	0m0.461s
+sys	0m0.082s
+sch-001 template | bedrock unavailable: TimeoutError
+sch-002 template | bedrock unavailable: TimeoutError
+sch-003 template | bedrock unavailable: TimeoutError
+sch-004 template | bedrock unavailable: TimeoutError
+sch-005 template | bedrock unavailable: TimeoutError

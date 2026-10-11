@@ -82,8 +82,8 @@ and emails the principal → API Gateway + CloudFront serve the dashboard.
 | --- | --- | --- | --- |
 | saans-ingest | feed, snapshot in S3 | `READING#station` items | PutItem on one table, read one S3 prefix |
 | saans-rules | readings, school items | `STATE#school` (tier, since, prev_tier) | GetItem, Query, PutItem on one table |
-| saans-advisory | state, school | `ADVISORY#school` (en, hi, text) | bedrock:InvokeModel on one model ARN, one table |
-| saans-notify | advisory | none | sns:Publish on one topic |
+| saans-advisory | state, school | `ADVISORY#school` (en, hi, text) | bedrock:InvokeModel + InvokeModelWithResponseStream on one model (profile + foundation); read state, write content |
+| saans-notify | advisory | delivery receipt on the ADVISORY item | sns:Publish on one topic; read/UpdateItem on content only |
 | saans-api | state, advisory | none | read-only on one table |
 
 **Invariant: the rules Lambda is the only thing that sets a tier. (Diagram shows rules -> agent -> SNS as
@@ -98,10 +98,11 @@ is deployed in ap-south-1 (`aws iam get-role-policy` readback; evidence: docs/sc
 - **saans-ingest**: `dynamodb:PutItem` only.
 - **saans-rules**: `dynamodb:GetItem`, `dynamodb:Query`, `dynamodb:PutItem` — the only role with a STATE write.
 
-Each statement names exactly one resource (the `saans-state-dev` table ARN); zero wildcards anywhere.
-The `saans-advisory`/`saans-notify` pair is not deployed yet; when it lands it gets **no write action
-on `saans-state`**, and the split tables keep that boundary checkable in the policy rather than by
-convention.
+Each statement names the narrowest resource set available: single tables, one topic, one model (the
+foundation-model ARN carries AWS's documented cross-region region wildcard — the only wildcard in
+the stack). The `saans-advisory`/`saans-notify` pair is **deployed (2026-10-12) and verified live**
+(docs/screens/t5-smoke.txt): neither holds any write action on `saans-state` — advisory writes only
+`saans-content`, notify updates only the delivery receipt on that same table.
 
 ### Storage design — TWO tables so the IAM boundary is literally true
 
@@ -125,9 +126,13 @@ partition key `SCHOOL#<id>` and differ only by sort key. DynamoDB's
   `dynamodb:LeadingKeys` pinning its write path. saans-advisory gets **no write
   action on saans-state at all** — the table is a different resource, so it is
   *physically* unable to set a tier. This is the honest, enforceable claim.
-- saans-advisory IAM allows `PutItem` on saans-content + `bedrock:InvokeModel`
-  on one model ARN + read on saans-state. **No write action on saans-state.**
-- saans-notify IAM allows `sns:Publish` on one topic. saans-api: read-only on both.
+- saans-advisory IAM allows `GetItem/Query/PutItem` on saans-content + `bedrock:InvokeModel`
+  and `bedrock:InvokeModelWithResponseStream` on exactly one model (inference profile + its
+  foundation model — a live AccessDenied proved the Converse APIs authorize under these
+  actions, not the `bedrock:Converse*` names) + read on saans-state. **No write action on
+  `saans-state`.**
+- saans-notify IAM allows `sns:Publish` on one topic + `GetItem/Query/UpdateItem` on
+  saans-content (delivery receipt only). saans-api: read-only on state.
 
 ### Why each service (blog architecture section)
 
