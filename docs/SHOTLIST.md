@@ -33,8 +33,19 @@ Screen-record the dashboard + terminal; voiceover optional (captions are fine).
 - Refresh the dashboard; switch language tabs (English → हिन्दी → తెలుగు).
 - If SNS confirmed: show the alert email arriving.
 
-## Beat 3 — AWS spine (2:00–2:45)
+## Optional: simulated spike (the Moderate→Poor flip — say "simulating a spike" on camera)
 
+```
+# 1. Write a synthetic Poor-level reading for sch-005 (labeled: simulated-for-demo)
+aws dynamodb put-item --table-name saans-state-dev --item '{"PK":{"S":"SCHOOL#sch-005"},"SK":{"S":"READING#2026-10-13T01:00"},"aqi":{"N":"255"},"band":{"S":"poor"},"stale":{"BOOL":false},"source":{"S":"simulated-for-demo"},"modeled":{"BOOL":true},"breakpoint_version":{"S":"cpcb-naqi-2014-pm-v1"},"ttl":{"N":"1792400000"}}'
+# 2. Run the chain — escalations adopt immediately (no hysteresis on upgrades)
+aws lambda invoke --function-name saans-rules-dev --payload '{}' /tmp/r.json --cli-read-timeout 200 && cat /tmp/r.json
+# 3. Refresh the dashboard: sch-005 flips to poor (red), advisory regenerates, alert sends.
+# 4. Cleanup after recording:
+aws dynamodb delete-item --table-name saans-state-dev --key '{"PK":{"S":"SCHOOL#sch-005"},"SK":{"S":"READING#2026-10-13T01:00"}}'
+```
+
+## Beat 3 — AWS spine (2:00–2:45)
 - Console (or terminal) tour, fast cuts: EventBridge rule (hourly) → the five Lambdas → DynamoDB
   tables (saans-state / saans-content) → Bedrock model (Nova Lite profile) → SNS topic →
   CloudFront distribution. Overlay `docs/screens/architecture.png`.
