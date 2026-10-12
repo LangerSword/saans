@@ -183,12 +183,12 @@ class TestCorsAllowlist:
              "headers": {"origin": "https://d123.cloudfront.net"}}, None)
         assert resp["headers"]["Access-Control-Allow-Origin"] == "https://d123.cloudfront.net"
 
-    def test_unlisted_origin_falls_back_to_primary_never_wildcard(self, monkeypatch):
+    def test_unlisted_origin_falls_back_to_primary_never_wildcard(self, monkeypatch, handler):
         monkeypatch.setenv(
             "DASHBOARD_ORIGINS",
             "https://saans.langersword.in,https://d123.cloudfront.net",
         )
-        resp = lambda_api.handler(
+        resp = handler(
             {"pathParameters": {"school_id": "sch-001"},
              "headers": {"origin": "https://evil.example"}}, None)
         origin = resp["headers"]["Access-Control-Allow-Origin"]
