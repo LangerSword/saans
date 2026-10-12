@@ -173,12 +173,12 @@ class TestStoredAdvisory:
 
 
 class TestCorsAllowlist:
-    def test_allowed_alt_origin_is_echoed(self, monkeypatch):
+    def test_allowed_alt_origin_is_echoed(self, monkeypatch, handler):
         monkeypatch.setenv(
             "DASHBOARD_ORIGINS",
             "https://saans.langersword.in,https://d123.cloudfront.net",
         )
-        resp = lambda_api.handler(
+        resp = handler(
             {"pathParameters": {"school_id": "sch-001"},
              "headers": {"origin": "https://d123.cloudfront.net"}}, None)
         assert resp["headers"]["Access-Control-Allow-Origin"] == "https://d123.cloudfront.net"
