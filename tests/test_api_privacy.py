@@ -44,10 +44,27 @@ class FakeTable:
         }]}
 
 
+class FakeContentTable:
+    """Stand-in for saans-content: returns an ADVISORY item carrying a stored
+    advisory plus a planted contact field that must not survive."""
+
+    def get_item(self, Key):  # noqa: N803
+        return {"Item": {
+            "PK": Key["PK"], "SK": "ADVISORY",
+            "tier": 2, "band": "poor",
+            "text": {"en": "Stored EN advisory.", "hi": "सहेजी गई सलाह।", "te": "నిల్వ చేసిన సలహా."},
+            "source": "bedrock", "generated_at": 1791757809,
+            "alerted_at": 1791757797, "delivered": True,
+            # planted private field on the advisory item too
+            "principal_email": "principal@school.example",
+        }}
+
+
 @pytest.fixture
 def handler(monkeypatch):
     monkeypatch.setenv("DASHBOARD_ORIGIN", "https://saans.langersword.in")
     monkeypatch.setattr(lambda_api, "_table", lambda: FakeTable())
+    monkeypatch.setattr(lambda_api, "_content_table", lambda: FakeContentTable())
     return lambda_api.handler
 
 
@@ -130,3 +147,50 @@ def test_forbidden_fields_list_covers_contact_variants():
     """Guard the guard: the list must name the obvious contact spellings."""
     for name in ("principal_email", "email", "phone", "contact", "address"):
         assert name in lambda_api.FORBIDDEN_FIELDS
+
+
+class TestStoredAdvisory:
+    """The dashboard shows the STORED advisory from saans-content, not just the
+    computed fallback — and the content item gets the same privacy gate."""
+
+    def test_stored_advisory_is_used(self, handler):
+        body = _body(handler({"pathParameters": {"school_id": "sch-001"}}, None))
+        assert body["advisory"] == "Stored EN advisory."
+        assert body["advisory_source"] == "bedrock"
+        assert body["advisory_all"]["hi"] == "सहेजी गई सलाह।"
+
+    def test_stored_advisory_carries_no_contact_field(self, handler):
+        resp = handler({"pathParameters": {"school_id": "sch-001"}}, None)
+        assert "principal@school.example" not in _walk_strings(_body(resp))
+
+    def test_missing_content_item_falls_back(self, monkeypatch):
+        monkeypatch.setenv("DASHBOARD_ORIGIN", "https://saans.langersword.in")
+        monkeypatch.setattr(lambda_api, "_table", lambda: FakeTable())
+        monkeypatch.setattr(lambda_api, "_content_table", lambda: (_ for _ in ()).throw(KeyError("CONTENT_TABLE")))
+        body = _body(lambda_api.handler({"pathParameters": {"school_id": "sch-001"}}, None))
+        assert body["advisory_source"] == "computed-fallback"
+        assert body["advisory"]  # computed text present, dashboard never blanks
+
+
+class TestCorsAllowlist:
+    def test_allowed_alt_origin_is_echoed(self, monkeypatch):
+        monkeypatch.setenv(
+            "DASHBOARD_ORIGINS",
+            "https://saans.langersword.in,https://d123.cloudfront.net",
+        )
+        resp = lambda_api.handler(
+            {"pathParameters": {"school_id": "sch-001"},
+             "headers": {"origin": "https://d123.cloudfront.net"}}, None)
+        assert resp["headers"]["Access-Control-Allow-Origin"] == "https://d123.cloudfront.net"
+
+    def test_unlisted_origin_falls_back_to_primary_never_wildcard(self, monkeypatch):
+        monkeypatch.setenv(
+            "DASHBOARD_ORIGINS",
+            "https://saans.langersword.in,https://d123.cloudfront.net",
+        )
+        resp = lambda_api.handler(
+            {"pathParameters": {"school_id": "sch-001"},
+             "headers": {"origin": "https://evil.example"}}, None)
+        origin = resp["headers"]["Access-Control-Allow-Origin"]
+        assert origin == "https://saans.langersword.in"
+        assert origin != "*"

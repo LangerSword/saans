@@ -84,7 +84,7 @@ and emails the principal → API Gateway + CloudFront serve the dashboard.
 | saans-rules | readings, school items | `STATE#school` (tier, since, prev_tier) | GetItem, Query, PutItem on one table |
 | saans-advisory | state, school | `ADVISORY#school` (en, hi, text) | bedrock:InvokeModel + InvokeModelWithResponseStream on one model (profile + foundation); read state, write content |
 | saans-notify | advisory | delivery receipt on the ADVISORY item | sns:Publish on one topic; read/UpdateItem on content only |
-| saans-api | state, advisory | none | read-only on one table |
+| saans-api | state, advisory | none | read-only on both tables |
 
 **Invariant: the rules Lambda is the only thing that sets a tier. (Diagram shows rules -> agent -> SNS as
 one chain; in SAM this is one invoke chain.) The tier lives in table `saans-state`.

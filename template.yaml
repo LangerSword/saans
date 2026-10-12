@@ -253,13 +253,20 @@ Resources:
       Environment:
         Variables:
           STATE_TABLE: !Ref SaansStateTable
-          DASHBOARD_ORIGIN: !Ref DashboardOrigin
-      # Least privilege, hand-scoped: read-only, two actions, one table.
+          CONTENT_TABLE: !Ref SaansContentTable
+          # Allowlist: the primary origin + the dashboard distribution's own
+          # domain (CloudFront default URL until the custom domain is attached).
+          DASHBOARD_ORIGINS: !Sub "${DashboardOrigin},https://${SaansDashboardDistribution.DomainName}"
+      # Least privilege, hand-scoped: read-only, two tables.
       Policies:
         - Statement:
             - Effect: Allow
               Action: [dynamodb:GetItem, dynamodb:Query]
               Resource: !GetAtt SaansStateTable.Arn
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:Query]
+              Resource: !GetAtt SaansContentTable.Arn
       Events:
         Api:
           Type: Api
@@ -291,6 +298,64 @@ Resources:
           ThrottlingRateLimit: !Ref ApiThrottlingRateLimit
           ThrottlingBurstLimit: !Ref ApiThrottlingBurstLimit
 
+  # ── dashboard ───────────────────────────────────────────────────────────
+  # Static page on S3 behind CloudFront (OAC — the bucket stays private).
+  # Files are synced post-deploy: aws s3 sync web/ s3://<bucket>/
+  SaansDashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "saans-dashboard-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  SaansDashboardOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "saans-dashboard-oac-${Environment}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SaansDashboardDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: s3-dashboard
+            DomainName: !GetAtt SaansDashboardBucket.RegionalDomainName
+            OriginAccessControlId: !Ref SaansDashboardOAC
+            S3OriginConfig: {}
+        DefaultCacheBehavior:
+          TargetOriginId: s3-dashboard
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # AWS managed: CachingOptimized
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+
+  SaansDashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SaansDashboardBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${SaansDashboardBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${SaansDashboardDistribution.Id}"
+
 Outputs:
   StateTableName:
     Description: The DynamoDB table holding school state and readings.
@@ -309,3 +374,7 @@ Outputs:
     Value: !GetAtt SaansNotifyFunction.Arn
   AlertsTopicArn:
     Value: !Ref SaansAlertsTopic
+  DashboardBucketName:
+    Value: !Ref SaansDashboardBucket
+  DashboardUrl:
+    Value: !Sub "https://${SaansDashboardDistribution.DomainName}"

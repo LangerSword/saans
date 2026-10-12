@@ -255,3 +255,20 @@ Timestampped entries. After each task, append the block below. This is honest
 - **AWS service used and why:** Bedrock (model wording — falling back to templates while the quota is exhausted), SNS (delivery), Lambda + DynamoDB (chain + saans-content).
 - **Evidence:** docs/screens/t5-smoke.txt (chain test, dedupe decisions, receipts, final fallback run).
 - **OPEN:** live Bedrock verification when the daily quota resets; SNS email confirmation click (needs a confirmable inbox); Anthropic payment-instrument fix is optional (third-party models only).
+
+## 2026-10-12T05:50+05:30 — Task 6: dashboard + domain (S3 + CloudFront + saans.langersword.in)
+
+- **Goal:** a principal-facing dashboard on a real URL — the last build piece before video + submission.
+- **What I asked the agent:** static dashboard (dark, one page, EN/HI/TE toggle), S3+CloudFront (OAC), custom domain with TLS; API upgrade to serve the STORED advisory + source badge; CORS allowlist.
+- **What worked:**
+  - Dashboard live: `https://d3eth8g6m9tw85.cloudfront.net` and **`https://saans.langersword.in`** — ACM cert ISSUED in under a minute (DNS validation through the Cloudflare API), CloudFront alias attached, distribution Deployed.
+  - Page verified: 5 schools, live AQI 128 "moderate", advisories in EN + Hindi per school, source badges (`advisory: template | reading: open-meteo-cams`), auto-refresh 60s.
+  - API now serves the stored advisory (EN/HI/TE + source + generated_at) from saans-content, with the same allow-list privacy gate applied to the content item.
+  - CORS is an explicit allowlist [`saans.langersword.in`, cloudfront URL]; the request Origin is echoed only when listed, and an unlisted origin falls back to primary — never `*`.
+- **What fought back:**
+  - The campus DNS resolver cached the earlier NXDOMAIN; global resolution verified via DoH and the domain served via an SNI test while the resolver catches up.
+  - CloudFront alias updates sit `InProgress` ~10 min; polled to `Deployed`.
+  - XSS guard: model-generated advisory text is escaped (`esc()`) before it touches innerHTML.
+- **AWS service used and why:** S3 (static files), CloudFront (CDN + TLS termination), ACM (certificate, us-east-1), API Gateway unchanged.
+- **Evidence:** docs/screens/dashboard.png (rendered), docs/screens/t5-smoke.txt.
+- **OPEN:** Bedrock daily quota still exhausted at 05:26 IST (fallback active; retest before video); SNS email confirm click pending an inbox.
